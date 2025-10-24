@@ -2,33 +2,71 @@ import './style.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GUI } from 'lil-gui'
+import Stats from 'stats.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
+import { EdgeFadeShader } from './edgeFade.js'
+import vertexShader from './vertex.glsl?raw'
+import fragmentShader from './fragment.glsl?raw'
 
 //===================== CANVAS & SCENE =====================//
 const canvas = document.querySelector('#webgl')
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0xffffff)
 
+//===================== PERFORMANCE MONITOR =====================//
+// FPS Counter
+const statsFPS = new Stats()
+statsFPS.showPanel(0) // FPS
+document.body.appendChild(statsFPS.dom)
+statsFPS.dom.style.position = 'absolute'
+statsFPS.dom.style.left = '0px'
+statsFPS.dom.style.top = '0px'
+
+// MS Counter
+const statsMS = new Stats()
+statsMS.showPanel(1) // MS
+document.body.appendChild(statsMS.dom)
+statsMS.dom.style.position = 'absolute'
+statsMS.dom.style.left = '0px'
+statsMS.dom.style.top = '48px'
+
+// MB Counter
+const statsMB = new Stats()
+statsMB.showPanel(2) // MB
+document.body.appendChild(statsMB.dom)
+statsMB.dom.style.position = 'absolute'
+statsMB.dom.style.left = '0px'
+statsMB.dom.style.top = '96px'
+
 //===================== WAVE PARAMETERS =====================//
 const params = {
     // Line parameters
-    lineCount: 80,
-    pointsPerLine: 200,
-    lineWidth: 1.5,
+    lineCount: 50,
+    pointsPerLine: 100,
+    lineWidth: 0.3,
     opacity: 0.7,
     
     // Wave parameters
-    waveAmplitude: 1.2,
-    waveFrequency: 1.5,
+    waveAmplitude: 1.5,
+    waveFrequency: 3,
     waveSpeed: 0.3,
     
     // Twist parameters
-    twistAmount: 2.5,
-    twistFrequency: 0.8,
-    twistSpeed: 0.4,
+    twistAmount: 5,
+    twistFrequency: 1,
+    twistSpeed: 0.15,
     
     // Mesh dimensions
-    meshWidth: 15,
-    meshHeight: 2.5,
+    meshWidth: 25,
+    meshHeight: 3,
+    
+    // Width variation parameters
+    widthVariation: 0.5,        // How much the width varies (0 = no variation, 1 = strong variation)
+    widthFrequency: 5.0,        // How often the width changes along the wave
+    widthSpeed: 0.2,            // Animation speed of width changes
+    widthPattern: 0.5,          // Pattern type (0 = smooth, 1 = more abrupt)
     
     // Gradient colors (left to right)
     color1: '#ff0080',
@@ -38,25 +76,26 @@ const params = {
     color5: '#00ffff',
     color6: '#0080ff',
     color7: '#8000ff',
-    colorStops: 5
+    colorStops: 7,
+    
+    // Edge fade parameters
+    fadeWidth: 0.2,             // How far from edge to start fading (0-0.5)
+    fadeStrength: 1.0           // Opacity at the edges (0 = fully transparent, 1 = no fade)
 }
 
-//===================== ANIMATED WAVE MESH =====================//
-let lineGroup = new THREE.Group()
-let lines = []
-let lineMaterials = []
+//===================== SHADER MESH =====================//
+let waveMesh
+let waveMaterial
 
-function createWaveMesh() {
-    // Clear existing lines
-    lines.forEach(line => {
-        line.geometry.dispose()
-        line.material.dispose()
-        lineGroup.remove(line)
-    })
-    lines = []
-    lineMaterials = []
+function createShaderMesh() {
+    // Remove old mesh
+    if (waveMesh) {
+        waveMesh.geometry.dispose()
+        waveMesh.material.dispose()
+        scene.remove(waveMesh)
+    }
     
-    // Get active colors based on colorStops
+    // Get active colors
     const activeColors = [
         params.color1,
         params.color2,
@@ -65,87 +104,68 @@ function createWaveMesh() {
         params.color5,
         params.color6,
         params.color7
-    ].slice(0, params.colorStops)
+    ].map(color => new THREE.Color(color))
     
-    for (let i = 0; i < params.lineCount; i++) {
-        const points = []
-        const colors = []
-        
-        // Create line points along X axis (horizontal flow)
-        for (let j = 0; j < params.pointsPerLine; j++) {
-            const x = (j / (params.pointsPerLine - 1)) * params.meshWidth - params.meshWidth / 2
-            const y = 0
-            const z = 0
-            points.push(new THREE.Vector3(x, y, z))
-            
-            // Calculate color gradient from left to right
-            const progress = j / (params.pointsPerLine - 1)
-            const colorIndex = progress * (activeColors.length - 1)
-            const colorIndexFloor = Math.floor(colorIndex)
-            const colorIndexCeil = Math.min(Math.ceil(colorIndex), activeColors.length - 1)
-            const colorMix = colorIndex - colorIndexFloor
-            
-            const color1 = new THREE.Color(activeColors[colorIndexFloor])
-            const color2 = new THREE.Color(activeColors[colorIndexCeil])
-            const color = color1.lerp(color2, colorMix)
-            
-            colors.push(color.r, color.g, color.b)
-        }
-        
-        const geometry = new THREE.BufferGeometry().setFromPoints(points)
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-        
-        const material = new THREE.LineBasicMaterial({
-            vertexColors: true,
-            linewidth: params.lineWidth,
-            transparent: true,
-            opacity: params.opacity
-        })
-        
-        const line = new THREE.Line(geometry, material)
-        line.userData.index = i
-        lines.push(line)
-        lineMaterials.push(material)
-        lineGroup.add(line)
-    }
+    // Create plane geometry with higher resolution for smoother animation
+    const geometry = new THREE.PlaneGeometry(1, 1, params.pointsPerLine - 1, params.lineCount - 1)
+    
+    // Create shader material
+    waveMaterial = new THREE.ShaderMaterial({
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        uniforms: {
+            uTime: { value: 0 },
+            uLineCount: { value: params.lineCount },
+            uLineWidth: { value: params.lineWidth },
+            uOpacity: { value: params.opacity },
+            uWaveAmplitude: { value: params.waveAmplitude },
+            uWaveFrequency: { value: params.waveFrequency },
+            uWaveSpeed: { value: params.waveSpeed },
+            uTwistAmount: { value: params.twistAmount },
+            uTwistFrequency: { value: params.twistFrequency },
+            uTwistSpeed: { value: params.twistSpeed },
+            uMeshWidth: { value: params.meshWidth },
+            uMeshHeight: { value: params.meshHeight },
+            uWidthVariation: { value: params.widthVariation },
+            uWidthFrequency: { value: params.widthFrequency },
+            uWidthSpeed: { value: params.widthSpeed },
+            uWidthPattern: { value: params.widthPattern },
+            uColors: { value: activeColors },
+            uColorStops: { value: params.colorStops }
+        },
+        transparent: true,
+        side: THREE.DoubleSide
+    })
+
+    waveMaterial.transparent = true;
+    waveMaterial.depthWrite = false;
+    waveMaterial.toneMapped = false;
+    
+    waveMesh = new THREE.Mesh(geometry, waveMaterial)
+    scene.add(waveMesh)
 }
 
-createWaveMesh()
-scene.add(lineGroup)
+createShaderMesh()
 
-function updateWaveAnimation(time) {
-    lines.forEach((line, i) => {
-        const positions = line.geometry.attributes.position.array
-        
-        // Calculate this line's position in the mesh (0 to 1)
-        const lineProgress = i / (params.lineCount - 1)
-        
-        // Position this line vertically in the mesh
-        const baseY = (lineProgress - 0.5) * params.meshHeight
-        
-        for (let j = 0; j < params.pointsPerLine; j++) {
-            const x = (j / (params.pointsPerLine - 1)) * params.meshWidth - params.meshWidth / 2
-            const xProgress = j / (params.pointsPerLine - 1)
-            
-            // Create flowing wave motion (up and down)
-            const wave1 = Math.sin(xProgress * Math.PI * params.waveFrequency + time * params.waveSpeed) * params.waveAmplitude
-            const wave2 = Math.sin(xProgress * Math.PI * params.waveFrequency * 2.3 - time * params.waveSpeed * 0.7) * params.waveAmplitude * 0.4
-            
-            // Create twist effect (lines rotating around center)
-            const twistAngle = Math.sin(xProgress * Math.PI * params.twistFrequency + time * params.twistSpeed) * params.twistAmount
-            const radius = lineProgress * params.meshHeight
-            
-            // Apply twist rotation
-            const y = baseY * Math.cos(twistAngle) + wave1 + wave2
-            const z = baseY * Math.sin(twistAngle)
-            
-            positions[j * 3] = x
-            positions[j * 3 + 1] = y
-            positions[j * 3 + 2] = z
-        }
-        
-        line.geometry.attributes.position.needsUpdate = true
-    })
+function updateShaderUniforms() {
+    if (!waveMaterial) return
+    
+    waveMaterial.uniforms.uLineCount.value = params.lineCount
+    waveMaterial.uniforms.uLineWidth.value = params.lineWidth
+    waveMaterial.uniforms.uOpacity.value = params.opacity
+    waveMaterial.uniforms.uWaveAmplitude.value = params.waveAmplitude
+    waveMaterial.uniforms.uWaveFrequency.value = params.waveFrequency
+    waveMaterial.uniforms.uWaveSpeed.value = params.waveSpeed
+    waveMaterial.uniforms.uTwistAmount.value = params.twistAmount
+    waveMaterial.uniforms.uTwistFrequency.value = params.twistFrequency
+    waveMaterial.uniforms.uTwistSpeed.value = params.twistSpeed
+    waveMaterial.uniforms.uMeshWidth.value = params.meshWidth
+    waveMaterial.uniforms.uMeshHeight.value = params.meshHeight
+    waveMaterial.uniforms.uWidthVariation.value = params.widthVariation
+    waveMaterial.uniforms.uWidthFrequency.value = params.widthFrequency
+    waveMaterial.uniforms.uWidthSpeed.value = params.widthSpeed
+    waveMaterial.uniforms.uWidthPattern.value = params.widthPattern
+    waveMaterial.uniforms.uColorStops.value = params.colorStops
 }
 
 //===================== SIZES =====================//
@@ -166,7 +186,10 @@ window.addEventListener('resize', () =>
 
     // Update renderer
     renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(window.devicePixelRatio)
+    
+    // Update composer
+    composer.setSize(sizes.width, sizes.height)
 })
 
 //===================== CAMERA =====================//
@@ -184,75 +207,157 @@ controls.enableDamping = true
 //===================== GUI =====================//
 const gui = new GUI()
 
+// Export/Import Settings
+const settingsFolder = gui.addFolder('Settings Export/Import')
+settingsFolder.add({
+    exportJSON: () => {
+        const settingsJSON = JSON.stringify(params, null, 2)
+        const blob = new Blob([settingsJSON], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'wave-settings.json'
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+}, 'exportJSON').name('💾 Download Settings JSON')
+settingsFolder.open()
+
 // Line Settings Folder
 const lineFolder = gui.addFolder('Line Settings')
-lineFolder.add(params, 'lineCount', 20, 200, 1).name('Line Count').onChange(() => createWaveMesh())
-lineFolder.add(params, 'pointsPerLine', 50, 400, 10).name('Points Per Line').onChange(() => createWaveMesh())
-lineFolder.add(params, 'lineWidth', 0.5, 5, 0.1).name('Line Width')
-lineFolder.add(params, 'opacity', 0.1, 1, 0.05).name('Opacity').onChange((value) => {
-    lineMaterials.forEach(mat => mat.opacity = value)
-})
+lineFolder.add(params, 'lineCount', 20, 200, 1).name('Line Count').onChange(() => createShaderMesh())
+lineFolder.add(params, 'pointsPerLine', 50, 500, 10).name('Points Per Line').onChange(() => createShaderMesh())
+lineFolder.add(params, 'lineWidth', 0.1, 1, 0.01).name('Line Width').onChange(updateShaderUniforms)
+lineFolder.add(params, 'opacity', 0.1, 1, 0.05).name('Opacity').onChange(updateShaderUniforms)
 lineFolder.open()
 
 // Wave Settings Folder
 const waveFolder = gui.addFolder('Wave Settings')
-waveFolder.add(params, 'waveAmplitude', 0, 3, 0.1).name('Wave Amplitude')
-waveFolder.add(params, 'waveFrequency', 0.1, 5, 0.1).name('Wave Frequency')
-waveFolder.add(params, 'waveSpeed', 0, 2, 0.05).name('Wave Speed')
+waveFolder.add(params, 'waveAmplitude', 0, 3, 0.1).name('Wave Amplitude').onChange(updateShaderUniforms)
+waveFolder.add(params, 'waveFrequency', 0.1, 5, 0.1).name('Wave Frequency').onChange(updateShaderUniforms)
+waveFolder.add(params, 'waveSpeed', 0, 2, 0.05).name('Wave Speed').onChange(updateShaderUniforms)
 waveFolder.open()
 
 // Twist Settings Folder
 const twistFolder = gui.addFolder('Twist Settings')
-twistFolder.add(params, 'twistAmount', 0, 10, 0.1).name('Twist Amount')
-twistFolder.add(params, 'twistFrequency', 0.1, 3, 0.1).name('Twist Frequency')
-twistFolder.add(params, 'twistSpeed', 0, 2, 0.05).name('Twist Speed')
+twistFolder.add(params, 'twistAmount', 0, 10, 0.1).name('Twist Amount').onChange(updateShaderUniforms)
+twistFolder.add(params, 'twistFrequency', 0.1, 3, 0.1).name('Twist Frequency').onChange(updateShaderUniforms)
+twistFolder.add(params, 'twistSpeed', 0, 2, 0.05).name('Twist Speed').onChange(updateShaderUniforms)
 twistFolder.open()
 
 // Mesh Dimensions Folder
 const meshFolder = gui.addFolder('Mesh Dimensions')
-meshFolder.add(params, 'meshWidth', 5, 30, 0.5).name('Mesh Width')
-meshFolder.add(params, 'meshHeight', 0.5, 10, 0.1).name('Mesh Height')
+meshFolder.add(params, 'meshWidth', 5, 30, 0.5).name('Mesh Width').onChange(updateShaderUniforms)
+meshFolder.add(params, 'meshHeight', 0.5, 10, 0.1).name('Mesh Height').onChange(updateShaderUniforms)
 meshFolder.open()
+
+// Width Variation Folder
+const widthFolder = gui.addFolder('Width Variation')
+widthFolder.add(params, 'widthVariation', 0, 2, 0.05).name('Variation Strength').onChange(updateShaderUniforms)
+widthFolder.add(params, 'widthFrequency', 0.1, 10, 0.1).name('Variation Frequency').onChange(updateShaderUniforms)
+widthFolder.add(params, 'widthSpeed', 0, 2, 0.05).name('Animation Speed').onChange(updateShaderUniforms)
+widthFolder.add(params, 'widthPattern', 0, 1, 0.05).name('Pattern Type').onChange(updateShaderUniforms)
+widthFolder.open()
 
 // Color Settings Folder
 const colorFolder = gui.addFolder('Gradient Colors')
-colorFolder.add(params, 'colorStops', 1, 7, 1).name('Color Stops').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color1').name('Color 1').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color2').name('Color 2').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color3').name('Color 3').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color4').name('Color 4').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color5').name('Color 5').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color6').name('Color 6').onChange(() => createWaveMesh())
-colorFolder.addColor(params, 'color7').name('Color 7').onChange(() => createWaveMesh())
+colorFolder.add(params, 'colorStops', 1, 7, 1).name('Color Stops').onChange(() => {
+    updateShaderUniforms()
+    const activeColors = [
+        params.color1,
+        params.color2,
+        params.color3,
+        params.color4,
+        params.color5,
+        params.color6,
+        params.color7
+    ].map(color => new THREE.Color(color))
+    waveMaterial.uniforms.uColors.value = activeColors
+})
+colorFolder.addColor(params, 'color1').name('Color 1').onChange(() => {
+    waveMaterial.uniforms.uColors.value[0] = new THREE.Color(params.color1)
+})
+colorFolder.addColor(params, 'color2').name('Color 2').onChange(() => {
+    waveMaterial.uniforms.uColors.value[1] = new THREE.Color(params.color2)
+})
+colorFolder.addColor(params, 'color3').name('Color 3').onChange(() => {
+    waveMaterial.uniforms.uColors.value[2] = new THREE.Color(params.color3)
+})
+colorFolder.addColor(params, 'color4').name('Color 4').onChange(() => {
+    waveMaterial.uniforms.uColors.value[3] = new THREE.Color(params.color4)
+})
+colorFolder.addColor(params, 'color5').name('Color 5').onChange(() => {
+    waveMaterial.uniforms.uColors.value[4] = new THREE.Color(params.color5)
+})
+colorFolder.addColor(params, 'color6').name('Color 6').onChange(() => {
+    waveMaterial.uniforms.uColors.value[5] = new THREE.Color(params.color6)
+})
+colorFolder.addColor(params, 'color7').name('Color 7').onChange(() => {
+    waveMaterial.uniforms.uColors.value[6] = new THREE.Color(params.color7)
+})
 colorFolder.open()
+
+// Edge Fade Settings Folder
+const fadeFolder = gui.addFolder('Edge Fade')
+fadeFolder.add(params, 'fadeWidth', 0, 0.5, 0.01).name('Fade Width').onChange(() => {
+    edgeFadePass.uniforms.fadeWidth.value = params.fadeWidth
+})
+fadeFolder.add(params, 'fadeStrength', 0, 1, 0.05).name('Fade Strength').onChange(() => {
+    edgeFadePass.uniforms.fadeStrength.value = params.fadeStrength
+})
+fadeFolder.open()
 
 //===================== RENDERER =====================//
 const renderer = new THREE.WebGLRenderer({
-    canvas: canvas
+    canvas: canvas,
+    antialias: true,
+    alpha: true,
+    powerPreference: 'high-performance',
 })
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(window.devicePixelRatio)
+
+//===================== POST-PROCESSING =====================//
+const composer = new EffectComposer(renderer)
+
+// Render pass - renders the scene
+const renderPass = new RenderPass(scene, camera)
+composer.addPass(renderPass)
+
+// Edge fade pass - fades left and right edges
+const edgeFadePass = new ShaderPass(EdgeFadeShader)
+edgeFadePass.uniforms.backgroundColor.value = scene.background
+composer.addPass(edgeFadePass)
+
+// Update composer size
+composer.setSize(sizes.width, sizes.height)
 
 //===================== ANIMATE =====================//
 const clock = new THREE.Clock()
 
 const tick = () =>
 {
+    statsFPS.begin()
+    statsMS.begin()
+    statsMB.begin()
+    
     const elapsedTime = clock.getElapsedTime()
 
-    // Update wave animation
-    updateWaveAnimation(elapsedTime)
-    
-    // Update line width for all materials
-    lineMaterials.forEach(material => {
-        material.linewidth = params.lineWidth
-    })
+    // Update shader time uniform
+    if (waveMaterial) {
+        waveMaterial.uniforms.uTime.value = elapsedTime
+    }
 
     // Update controls
     controls.update()
 
     // Render
-    renderer.render(scene, camera)
+    composer.render()
+    
+    statsFPS.end()
+    statsMS.end()
+    statsMB.end()
 
     // Call tick again on the next frame
     window.requestAnimationFrame(tick)
