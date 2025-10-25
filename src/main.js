@@ -8,6 +8,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { EdgeFadeShader } from './edgeFade.js';
 import { WaveShader } from './waveShader.js';
+import { ParticleNetwork } from './ParticleNetwork.js';
 
 class Wave {
   constructor(params) {
@@ -140,21 +141,63 @@ class App {
       widthSpeed: 0.2,
       widthPattern: 0.5,
 
-      color1: '#ff0080',
-      color2: '#ff8c00',
-      color3: '#ffff00',
-      color4: '#00ff00',
-      color5: '#00ffff',
-      color6: '#0080ff',
-      color7: '#8000ff',
+      color1: '#9d00ff',
+      color2: '#bf94ff',
+      color3: '#67a8fe',
+      color4: '#52b7ff',
+      color5: '#76dafe',
+      color6: '#5cffb3',
+      color7: '#00ddff',
       colorStops: 7,
 
       fadeWidth: 0.2,
       fadeStrength: 1.0,
+
+      // Particle Network params
+      particleCount: 50,
+      particleSize: 0.07,
+      particleLineWidth: 2.0, // Line2 uses pixel width
+      particleOpacity: 0.9,
+      movementSpeed: 0.1,
+      movementRange: 1.0,
+      particleZPosition: -3.0,
+      particleSpreadWidth: 1.2, // Multiplier for particle spread (0.3-2.0)
+      particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
+      maxConnectionDistance: 2.0,
+    };
+
+    // Helper to get active colors as THREE.Color array
+    this.getActiveColors = () => {
+      return [
+        this.params.color1,
+        this.params.color2,
+        this.params.color3,
+        this.params.color4,
+        this.params.color5,
+        this.params.color6,
+        this.params.color7,
+      ].map(color => new THREE.Color(color));
     };
 
     this.wave = new Wave(this.params);
     this.scene.add(this.wave.mesh);
+
+    // Initialize particle network
+    this.particleNetwork = new ParticleNetwork({
+      particleCount: this.params.particleCount,
+      particleSize: this.params.particleSize,
+      lineWidth: this.params.particleLineWidth,
+      opacity: this.params.particleOpacity,
+      colors: this.getActiveColors(),
+      colorStops: this.params.colorStops,
+      movementSpeed: this.params.movementSpeed,
+      movementRange: this.params.movementRange,
+      zPosition: this.params.particleZPosition,
+      boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
+      boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
+      maxConnectionDistance: this.params.maxConnectionDistance,
+    });
+    this.scene.add(this.particleNetwork.getGroup());
 
     this.setupStats();
     this.setupCamera();
@@ -342,35 +385,61 @@ class App {
       .onChange(() => {
         this.wave.updateUniforms();
         this.wave.updateColors();
+        // Update particle network colors
+        this.particleNetwork.updateParams({
+          colors: this.getActiveColors(),
+          colorStops: this.params.colorStops,
+        });
       });
     colorFolder
       .addColor(this.params, 'color1')
       .name('Color 1')
-      .onChange(() => this.wave.updateSingleColor(0));
+      .onChange(() => {
+        this.wave.updateSingleColor(0);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color2')
       .name('Color 2')
-      .onChange(() => this.wave.updateSingleColor(1));
+      .onChange(() => {
+        this.wave.updateSingleColor(1);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color3')
       .name('Color 3')
-      .onChange(() => this.wave.updateSingleColor(2));
+      .onChange(() => {
+        this.wave.updateSingleColor(2);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color4')
       .name('Color 4')
-      .onChange(() => this.wave.updateSingleColor(3));
+      .onChange(() => {
+        this.wave.updateSingleColor(3);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color5')
       .name('Color 5')
-      .onChange(() => this.wave.updateSingleColor(4));
+      .onChange(() => {
+        this.wave.updateSingleColor(4);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color6')
       .name('Color 6')
-      .onChange(() => this.wave.updateSingleColor(5));
+      .onChange(() => {
+        this.wave.updateSingleColor(5);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder
       .addColor(this.params, 'color7')
       .name('Color 7')
-      .onChange(() => this.wave.updateSingleColor(6));
+      .onChange(() => {
+        this.wave.updateSingleColor(6);
+        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+      });
     colorFolder.open();
 
     const fadeFolder = this.gui.addFolder('Edge Fade');
@@ -387,6 +456,85 @@ class App {
         this.edgeFadePass.uniforms.fadeStrength.value = this.params.fadeStrength;
       });
     fadeFolder.open();
+
+    // Particle Network Controls
+    const particleFolder = this.gui.addFolder('Particle Network');
+    particleFolder
+      .add(this.params, 'particleCount', 20, 200, 1)
+      .name('Particle Count')
+      .onChange(() => {
+        this.particleNetwork.params.particleCount = this.params.particleCount;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder
+      .add(this.params, 'particleSize', 0.01, 0.2, 0.01)
+      .name('Particle Size')
+      .onChange(() => {
+        this.particleNetwork.params.particleSize = this.params.particleSize;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder
+      .add(this.params, 'particleLineWidth', 0.1, 10, 0.1)
+      .name('Line Width (px)')
+      .onChange(() => {
+        this.particleNetwork.updateParams({ lineWidth: this.params.particleLineWidth });
+      });
+    particleFolder
+      .add(this.params, 'particleOpacity', 0.1, 1, 0.05)
+      .name('Opacity')
+      .onChange(() => {
+        this.particleNetwork.updateParams({ opacity: this.params.particleOpacity });
+      });
+    particleFolder
+      .add(this.params, 'movementSpeed', 0, 1, 0.05)
+      .name('Movement Speed')
+      .onChange(() => {
+        this.particleNetwork.params.movementSpeed = this.params.movementSpeed;
+      });
+    particleFolder
+      .add(this.params, 'movementRange', 0.1, 5, 0.1)
+      .name('Movement Range')
+      .onChange(() => {
+        this.particleNetwork.params.movementRange = this.params.movementRange;
+      });
+    particleFolder
+      .add(this.params, 'particleZPosition', -10, 0, 0.1)
+      .name('Z Position')
+      .onChange(() => {
+        this.particleNetwork.updateZPosition(this.params.particleZPosition);
+      });
+    particleFolder
+      .add(this.params, 'particleSpreadWidth', 0.3, 2.0, 0.1)
+      .name('Spread Width')
+      .onChange(() => {
+        this.particleNetwork.params.boundsX = this.params.meshWidth * this.params.particleSpreadWidth;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder
+      .add(this.params, 'particleSpreadHeight', 0.3, 2.0, 0.1)
+      .name('Spread Height')
+      .onChange(() => {
+        this.particleNetwork.params.boundsY = this.params.meshHeight * this.params.particleSpreadHeight;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder
+      .add(this.params, 'maxConnectionDistance', 1, 10, 0.1)
+      .name('Connection Reach Distance')
+      .onChange(() => {
+        this.particleNetwork.params.maxConnectionDistance = this.params.maxConnectionDistance;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder.open();
   }
 
   setupEventListeners() {
@@ -401,6 +549,11 @@ class App {
       this.renderer.setPixelRatio(window.devicePixelRatio);
 
       this.composer.setSize(this.sizes.width, this.sizes.height);
+
+      // Update particle network line resolution
+      if (this.particleNetwork) {
+        this.particleNetwork.updateResolution(this.sizes.width, this.sizes.height);
+      }
     });
   }
 
@@ -410,7 +563,13 @@ class App {
     this.statsMB.begin();
 
     const elapsedTime = this.clock.getElapsedTime();
+
     if (this.wave.material) WaveShader.uniforms.uTime.value = elapsedTime;
+
+    // Update particle network
+    if (this.particleNetwork) {
+      this.particleNetwork.update(elapsedTime);
+    }
 
     this.controls.update();
     this.composer.render();
