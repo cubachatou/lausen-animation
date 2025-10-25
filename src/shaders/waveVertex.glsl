@@ -1,5 +1,6 @@
 varying vec2 vUv;
 varying vec3 vPosition;
+varying vec3 vColor;
 
 uniform float uTime;
 uniform float uWaveAmplitude;
@@ -14,6 +15,8 @@ uniform float uWidthVariation;
 uniform float uWidthFrequency;
 uniform float uWidthSpeed;
 uniform float uWidthPattern;
+uniform vec3 uColors[7];
+uniform int uColorStops;
 
 void main() {
     vUv = uv;
@@ -57,6 +60,19 @@ void main() {
     // Apply twist rotation
     pos.y = baseY * cos(twistAngle) + wave1 + wave2;
     pos.z = baseY * sin(twistAngle);
+
+    // Calculate gradient color based on X position
+    float colorProgress = xProgress;
+    vColor = uColors[0];
+
+    if (uColorStops > 1) {
+        float colorIndex = colorProgress * float(uColorStops - 1);
+        int colorIndexFloor = int(floor(colorIndex));
+        int colorIndexCeil = min(colorIndexFloor + 1, uColorStops - 1);
+        float colorMix = fract(colorIndex);
+
+        vColor = mix(uColors[colorIndexFloor], uColors[colorIndexCeil], colorMix);
+    }
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }

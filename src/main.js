@@ -1,366 +1,427 @@
-import './style.css'
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { GUI } from 'lil-gui'
-import Stats from 'stats.js'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
-import { EdgeFadeShader } from './edgeFade.js'
-import vertexShader from './vertex.glsl?raw'
-import fragmentShader from './fragment.glsl?raw'
+import './style.css';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GUI } from 'lil-gui';
+import Stats from 'stats.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { EdgeFadeShader } from './edgeFade.js';
+import { WaveShader } from './waveShader.js';
 
-//===================== CANVAS & SCENE =====================//
-const canvas = document.querySelector('#webgl')
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0xffffff)
+class Wave {
+  constructor(params) {
+    this.params = params;
+    this.material = null;
+    this.mesh = null;
+    this.createMesh();
+  }
 
-//===================== PERFORMANCE MONITOR =====================//
-// FPS Counter
-const statsFPS = new Stats()
-statsFPS.showPanel(0) // FPS
-document.body.appendChild(statsFPS.dom)
-statsFPS.dom.style.position = 'absolute'
-statsFPS.dom.style.left = '0px'
-statsFPS.dom.style.top = '0px'
+  createMesh() {
+    if (this.mesh) {
+      this.mesh.geometry.dispose();
+      this.mesh.material.dispose();
+      // Note: scene.remove is handled by the caller
+    }
 
-// MS Counter
-const statsMS = new Stats()
-statsMS.showPanel(1) // MS
-document.body.appendChild(statsMS.dom)
-statsMS.dom.style.position = 'absolute'
-statsMS.dom.style.left = '0px'
-statsMS.dom.style.top = '48px'
+    const activeColors = [
+      this.params.color1,
+      this.params.color2,
+      this.params.color3,
+      this.params.color4,
+      this.params.color5,
+      this.params.color6,
+      this.params.color7,
+    ].map(color => new THREE.Color(color));
 
-// MB Counter
-const statsMB = new Stats()
-statsMB.showPanel(2) // MB
-document.body.appendChild(statsMB.dom)
-statsMB.dom.style.position = 'absolute'
-statsMB.dom.style.left = '0px'
-statsMB.dom.style.top = '96px'
+    const geometry = new THREE.PlaneGeometry(1, 1, this.params.pointsPerLine - 1, this.params.lineCount - 1);
 
-//===================== WAVE PARAMETERS =====================//
-const params = {
-    // Line parameters
-    lineCount: 50,
-    pointsPerLine: 100,
-    lineWidth: 0.3,
-    opacity: 0.7,
-    
-    // Wave parameters
-    waveAmplitude: 1.5,
-    waveFrequency: 3,
-    waveSpeed: 0.3,
-    
-    // Twist parameters
-    twistAmount: 5,
-    twistFrequency: 1,
-    twistSpeed: 0.15,
-    
-    // Mesh dimensions
-    meshWidth: 25,
-    meshHeight: 3,
-    
-    // Width variation parameters
-    widthVariation: 0.5,        // How much the width varies (0 = no variation, 1 = strong variation)
-    widthFrequency: 5.0,        // How often the width changes along the wave
-    widthSpeed: 0.2,            // Animation speed of width changes
-    widthPattern: 0.5,          // Pattern type (0 = smooth, 1 = more abrupt)
-    
-    // Gradient colors (left to right)
-    color1: '#ff0080',
-    color2: '#ff8c00',
-    color3: '#ffff00',
-    color4: '#00ff00',
-    color5: '#00ffff',
-    color6: '#0080ff',
-    color7: '#8000ff',
-    colorStops: 7,
-    
-    // Edge fade parameters
-    fadeWidth: 0.2,             // How far from edge to start fading (0-0.5)
-    fadeStrength: 1.0           // Opacity at the edges (0 = fully transparent, 1 = no fade)
+    // Update WaveShader uniforms with current params
+    WaveShader.uniforms.uLineCount.value = this.params.lineCount;
+    WaveShader.uniforms.uLineWidth.value = this.params.lineWidth;
+    WaveShader.uniforms.uOpacity.value = this.params.opacity;
+    WaveShader.uniforms.uWaveAmplitude.value = this.params.waveAmplitude;
+    WaveShader.uniforms.uWaveFrequency.value = this.params.waveFrequency;
+    WaveShader.uniforms.uWaveSpeed.value = this.params.waveSpeed;
+    WaveShader.uniforms.uTwistAmount.value = this.params.twistAmount;
+    WaveShader.uniforms.uTwistFrequency.value = this.params.twistFrequency;
+    WaveShader.uniforms.uTwistSpeed.value = this.params.twistSpeed;
+    WaveShader.uniforms.uMeshWidth.value = this.params.meshWidth;
+    WaveShader.uniforms.uMeshHeight.value = this.params.meshHeight;
+    WaveShader.uniforms.uWidthVariation.value = this.params.widthVariation;
+    WaveShader.uniforms.uWidthFrequency.value = this.params.widthFrequency;
+    WaveShader.uniforms.uWidthSpeed.value = this.params.widthSpeed;
+    WaveShader.uniforms.uWidthPattern.value = this.params.widthPattern;
+    WaveShader.uniforms.uColors.value = activeColors;
+    WaveShader.uniforms.uColorStops.value = this.params.colorStops;
+
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: WaveShader.vertexShader,
+      fragmentShader: WaveShader.fragmentShader,
+      uniforms: WaveShader.uniforms,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+
+    this.mesh = new THREE.Mesh(geometry, this.material);
+  }
+
+  updateUniforms() {
+    if (!this.material) return;
+
+    WaveShader.uniforms.uLineCount.value = this.params.lineCount;
+    WaveShader.uniforms.uLineWidth.value = this.params.lineWidth;
+    WaveShader.uniforms.uOpacity.value = this.params.opacity;
+    WaveShader.uniforms.uWaveAmplitude.value = this.params.waveAmplitude;
+    WaveShader.uniforms.uWaveFrequency.value = this.params.waveFrequency;
+    WaveShader.uniforms.uWaveSpeed.value = this.params.waveSpeed;
+    WaveShader.uniforms.uTwistAmount.value = this.params.twistAmount;
+    WaveShader.uniforms.uTwistFrequency.value = this.params.twistFrequency;
+    WaveShader.uniforms.uTwistSpeed.value = this.params.twistSpeed;
+    WaveShader.uniforms.uMeshWidth.value = this.params.meshWidth;
+    WaveShader.uniforms.uMeshHeight.value = this.params.meshHeight;
+    WaveShader.uniforms.uWidthVariation.value = this.params.widthVariation;
+    WaveShader.uniforms.uWidthFrequency.value = this.params.widthFrequency;
+    WaveShader.uniforms.uWidthSpeed.value = this.params.widthSpeed;
+    WaveShader.uniforms.uWidthPattern.value = this.params.widthPattern;
+    WaveShader.uniforms.uColorStops.value = this.params.colorStops;
+  }
+
+  updateColors() {
+    const activeColors = [
+      this.params.color1,
+      this.params.color2,
+      this.params.color3,
+      this.params.color4,
+      this.params.color5,
+      this.params.color6,
+      this.params.color7,
+    ].map(color => new THREE.Color(color));
+    WaveShader.uniforms.uColors.value = activeColors;
+  }
+
+  updateSingleColor(index) {
+    WaveShader.uniforms.uColors.value[index] = new THREE.Color(this.params[`color${index + 1}`]);
+  }
 }
 
-//===================== SHADER MESH =====================//
-let waveMesh
-let waveMaterial
+class App {
+  constructor() {
+    this.canvas = document.querySelector('#webgl');
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xffffff);
 
-function createShaderMesh() {
-    // Remove old mesh
-    if (waveMesh) {
-        waveMesh.geometry.dispose()
-        waveMesh.material.dispose()
-        scene.remove(waveMesh)
-    }
-    
-    // Get active colors
-    const activeColors = [
-        params.color1,
-        params.color2,
-        params.color3,
-        params.color4,
-        params.color5,
-        params.color6,
-        params.color7
-    ].map(color => new THREE.Color(color))
-    
-    // Create plane geometry with higher resolution for smoother animation
-    const geometry = new THREE.PlaneGeometry(1, 1, params.pointsPerLine - 1, params.lineCount - 1)
-    
-    // Create shader material
-    waveMaterial = new THREE.ShaderMaterial({
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
-        uniforms: {
-            uTime: { value: 0 },
-            uLineCount: { value: params.lineCount },
-            uLineWidth: { value: params.lineWidth },
-            uOpacity: { value: params.opacity },
-            uWaveAmplitude: { value: params.waveAmplitude },
-            uWaveFrequency: { value: params.waveFrequency },
-            uWaveSpeed: { value: params.waveSpeed },
-            uTwistAmount: { value: params.twistAmount },
-            uTwistFrequency: { value: params.twistFrequency },
-            uTwistSpeed: { value: params.twistSpeed },
-            uMeshWidth: { value: params.meshWidth },
-            uMeshHeight: { value: params.meshHeight },
-            uWidthVariation: { value: params.widthVariation },
-            uWidthFrequency: { value: params.widthFrequency },
-            uWidthSpeed: { value: params.widthSpeed },
-            uWidthPattern: { value: params.widthPattern },
-            uColors: { value: activeColors },
-            uColorStops: { value: params.colorStops }
+    this.sizes = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+
+    this.params = {
+      lineCount: 50,
+      pointsPerLine: 100,
+      lineWidth: 0.3,
+      opacity: 0.7,
+
+      waveAmplitude: 1.5,
+      waveFrequency: 3,
+      waveSpeed: 0.3,
+
+      twistAmount: 5,
+      twistFrequency: 1,
+      twistSpeed: 0.15,
+
+      meshWidth: 25,
+      meshHeight: 3,
+
+      widthVariation: 0.5,
+      widthFrequency: 5.0,
+      widthSpeed: 0.2,
+      widthPattern: 0.5,
+
+      color1: '#ff0080',
+      color2: '#ff8c00',
+      color3: '#ffff00',
+      color4: '#00ff00',
+      color5: '#00ffff',
+      color6: '#0080ff',
+      color7: '#8000ff',
+      colorStops: 7,
+
+      fadeWidth: 0.2,
+      fadeStrength: 1.0,
+    };
+
+    this.wave = new Wave(this.params);
+    this.scene.add(this.wave.mesh);
+
+    this.setupStats();
+    this.setupCamera();
+    this.setupControls();
+    this.setupRenderer();
+    this.setupComposer();
+    this.setupGUI();
+    this.setupEventListeners();
+
+    this.clock = new THREE.Clock();
+    this.animate();
+  }
+
+  setupStats() {
+    this.statsFPS = new Stats();
+    this.statsFPS.showPanel(0);
+    document.body.appendChild(this.statsFPS.dom);
+    this.statsFPS.dom.style.position = 'absolute';
+    this.statsFPS.dom.style.left = '0px';
+    this.statsFPS.dom.style.top = '0px';
+
+    this.statsMS = new Stats();
+    this.statsMS.showPanel(1);
+    document.body.appendChild(this.statsMS.dom);
+    this.statsMS.dom.style.position = 'absolute';
+    this.statsMS.dom.style.left = '0px';
+    this.statsMS.dom.style.top = '48px';
+
+    this.statsMB = new Stats();
+    this.statsMB.showPanel(2);
+    document.body.appendChild(this.statsMB.dom);
+    this.statsMB.dom.style.position = 'absolute';
+    this.statsMB.dom.style.left = '0px';
+    this.statsMB.dom.style.top = '96px';
+  }
+
+  setupCamera() {
+    this.camera = new THREE.PerspectiveCamera(75, this.sizes.width / this.sizes.height, 0.1, 100);
+    this.camera.position.set(0, 0, 6);
+    this.camera.lookAt(0, 0, 0);
+    this.scene.add(this.camera);
+  }
+
+  setupControls() {
+    this.controls = new OrbitControls(this.camera, this.canvas);
+    this.controls.enableDamping = true;
+  }
+
+  setupRenderer() {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.setSize(this.sizes.width, this.sizes.height);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+  }
+
+  setupComposer() {
+    this.composer = new EffectComposer(this.renderer);
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+    this.edgeFadePass = new ShaderPass(EdgeFadeShader);
+    this.edgeFadePass.uniforms.backgroundColor.value = this.scene.background;
+    this.composer.addPass(this.edgeFadePass);
+    this.composer.setSize(this.sizes.width, this.sizes.height);
+  }
+
+  setupGUI() {
+    this.gui = new GUI();
+
+    const settingsFolder = this.gui.addFolder('Settings Export/Import');
+    settingsFolder
+      .add(
+        {
+          exportJSON: () => {
+            const settingsJSON = JSON.stringify(this.params, null, 2);
+            const blob = new Blob([settingsJSON], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'wave-settings.json';
+            a.click();
+            URL.revokeObjectURL(url);
+          },
         },
-        transparent: true,
-        side: THREE.DoubleSide
-    })
+        'exportJSON'
+      )
+      .name('💾 Download Settings JSON');
+    settingsFolder.open();
 
-    waveMaterial.transparent = true;
-    waveMaterial.depthWrite = false;
-    waveMaterial.toneMapped = false;
-    
-    waveMesh = new THREE.Mesh(geometry, waveMaterial)
-    scene.add(waveMesh)
+    const lineFolder = this.gui.addFolder('Line Settings');
+    lineFolder
+      .add(this.params, 'lineCount', 20, 200, 1)
+      .name('Line Count')
+      .onChange(() => {
+        this.scene.remove(this.wave.mesh);
+        this.wave.createMesh();
+        this.scene.add(this.wave.mesh);
+      });
+    lineFolder
+      .add(this.params, 'pointsPerLine', 50, 500, 10)
+      .name('Points Per Line')
+      .onChange(() => {
+        this.scene.remove(this.wave.mesh);
+        this.wave.createMesh();
+        this.scene.add(this.wave.mesh);
+      });
+    lineFolder
+      .add(this.params, 'lineWidth', 0.1, 1, 0.01)
+      .name('Line Width')
+      .onChange(() => this.wave.updateUniforms());
+    lineFolder
+      .add(this.params, 'opacity', 0.1, 1, 0.05)
+      .name('Opacity')
+      .onChange(() => this.wave.updateUniforms());
+    lineFolder.open();
+
+    const waveFolder = this.gui.addFolder('Wave Settings');
+    waveFolder
+      .add(this.params, 'waveAmplitude', 0, 3, 0.1)
+      .name('Wave Amplitude')
+      .onChange(() => this.wave.updateUniforms());
+    waveFolder
+      .add(this.params, 'waveFrequency', 0.1, 5, 0.1)
+      .name('Wave Frequency')
+      .onChange(() => this.wave.updateUniforms());
+    waveFolder
+      .add(this.params, 'waveSpeed', 0, 2, 0.05)
+      .name('Wave Speed')
+      .onChange(() => this.wave.updateUniforms());
+    waveFolder.open();
+
+    const twistFolder = this.gui.addFolder('Twist Settings');
+    twistFolder
+      .add(this.params, 'twistAmount', 0, 10, 0.1)
+      .name('Twist Amount')
+      .onChange(() => this.wave.updateUniforms());
+    twistFolder
+      .add(this.params, 'twistFrequency', 0.1, 3, 0.1)
+      .name('Twist Frequency')
+      .onChange(() => this.wave.updateUniforms());
+    twistFolder
+      .add(this.params, 'twistSpeed', 0, 2, 0.05)
+      .name('Twist Speed')
+      .onChange(() => this.wave.updateUniforms());
+    twistFolder.open();
+
+    const meshFolder = this.gui.addFolder('Mesh Dimensions');
+    meshFolder
+      .add(this.params, 'meshWidth', 5, 30, 0.5)
+      .name('Mesh Width')
+      .onChange(() => this.wave.updateUniforms());
+    meshFolder
+      .add(this.params, 'meshHeight', 0.5, 10, 0.1)
+      .name('Mesh Height')
+      .onChange(() => this.wave.updateUniforms());
+    meshFolder.open();
+
+    const widthFolder = this.gui.addFolder('Width Variation');
+    widthFolder
+      .add(this.params, 'widthVariation', 0, 2, 0.05)
+      .name('Variation Strength')
+      .onChange(() => this.wave.updateUniforms());
+    widthFolder
+      .add(this.params, 'widthFrequency', 0.1, 10, 0.1)
+      .name('Variation Frequency')
+      .onChange(() => this.wave.updateUniforms());
+    widthFolder
+      .add(this.params, 'widthSpeed', 0, 2, 0.05)
+      .name('Animation Speed')
+      .onChange(() => this.wave.updateUniforms());
+    widthFolder
+      .add(this.params, 'widthPattern', 0, 1, 0.05)
+      .name('Pattern Type')
+      .onChange(() => this.wave.updateUniforms());
+    widthFolder.open();
+
+    const colorFolder = this.gui.addFolder('Gradient Colors');
+    colorFolder
+      .add(this.params, 'colorStops', 1, 7, 1)
+      .name('Color Stops')
+      .onChange(() => {
+        this.wave.updateUniforms();
+        this.wave.updateColors();
+      });
+    colorFolder
+      .addColor(this.params, 'color1')
+      .name('Color 1')
+      .onChange(() => this.wave.updateSingleColor(0));
+    colorFolder
+      .addColor(this.params, 'color2')
+      .name('Color 2')
+      .onChange(() => this.wave.updateSingleColor(1));
+    colorFolder
+      .addColor(this.params, 'color3')
+      .name('Color 3')
+      .onChange(() => this.wave.updateSingleColor(2));
+    colorFolder
+      .addColor(this.params, 'color4')
+      .name('Color 4')
+      .onChange(() => this.wave.updateSingleColor(3));
+    colorFolder
+      .addColor(this.params, 'color5')
+      .name('Color 5')
+      .onChange(() => this.wave.updateSingleColor(4));
+    colorFolder
+      .addColor(this.params, 'color6')
+      .name('Color 6')
+      .onChange(() => this.wave.updateSingleColor(5));
+    colorFolder
+      .addColor(this.params, 'color7')
+      .name('Color 7')
+      .onChange(() => this.wave.updateSingleColor(6));
+    colorFolder.open();
+
+    const fadeFolder = this.gui.addFolder('Edge Fade');
+    fadeFolder
+      .add(this.params, 'fadeWidth', 0, 0.5, 0.01)
+      .name('Fade Width')
+      .onChange(() => {
+        this.edgeFadePass.uniforms.fadeWidth.value = this.params.fadeWidth;
+      });
+    fadeFolder
+      .add(this.params, 'fadeStrength', 0, 1, 0.05)
+      .name('Fade Strength')
+      .onChange(() => {
+        this.edgeFadePass.uniforms.fadeStrength.value = this.params.fadeStrength;
+      });
+    fadeFolder.open();
+  }
+
+  setupEventListeners() {
+    window.addEventListener('resize', () => {
+      this.sizes.width = window.innerWidth;
+      this.sizes.height = window.innerHeight;
+
+      this.camera.aspect = this.sizes.width / this.sizes.height;
+      this.camera.updateProjectionMatrix();
+
+      this.renderer.setSize(this.sizes.width, this.sizes.height);
+      this.renderer.setPixelRatio(window.devicePixelRatio);
+
+      this.composer.setSize(this.sizes.width, this.sizes.height);
+    });
+  }
+
+  animate() {
+    this.statsFPS.begin();
+    this.statsMS.begin();
+    this.statsMB.begin();
+
+    const elapsedTime = this.clock.getElapsedTime();
+    if (this.wave.material) WaveShader.uniforms.uTime.value = elapsedTime;
+
+    this.controls.update();
+    this.composer.render();
+
+    this.statsFPS.end();
+    this.statsMS.end();
+    this.statsMB.end();
+
+    window.requestAnimationFrame(() => this.animate());
+  }
 }
 
-createShaderMesh()
-
-function updateShaderUniforms() {
-    if (!waveMaterial) return
-    
-    waveMaterial.uniforms.uLineCount.value = params.lineCount
-    waveMaterial.uniforms.uLineWidth.value = params.lineWidth
-    waveMaterial.uniforms.uOpacity.value = params.opacity
-    waveMaterial.uniforms.uWaveAmplitude.value = params.waveAmplitude
-    waveMaterial.uniforms.uWaveFrequency.value = params.waveFrequency
-    waveMaterial.uniforms.uWaveSpeed.value = params.waveSpeed
-    waveMaterial.uniforms.uTwistAmount.value = params.twistAmount
-    waveMaterial.uniforms.uTwistFrequency.value = params.twistFrequency
-    waveMaterial.uniforms.uTwistSpeed.value = params.twistSpeed
-    waveMaterial.uniforms.uMeshWidth.value = params.meshWidth
-    waveMaterial.uniforms.uMeshHeight.value = params.meshHeight
-    waveMaterial.uniforms.uWidthVariation.value = params.widthVariation
-    waveMaterial.uniforms.uWidthFrequency.value = params.widthFrequency
-    waveMaterial.uniforms.uWidthSpeed.value = params.widthSpeed
-    waveMaterial.uniforms.uWidthPattern.value = params.widthPattern
-    waveMaterial.uniforms.uColorStops.value = params.colorStops
-}
-
-//===================== SIZES =====================//
-const sizes = {
-    width: window.innerWidth,
-    height: window.innerHeight
-}
-
-window.addEventListener('resize', () =>
-{
-    // Update sizes
-    sizes.width = window.innerWidth
-    sizes.height = window.innerHeight
-
-    // Update camera
-    camera.aspect = sizes.width / sizes.height
-    camera.updateProjectionMatrix()
-
-    // Update renderer
-    renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(window.devicePixelRatio)
-    
-    // Update composer
-    composer.setSize(sizes.width, sizes.height)
-})
-
-//===================== CAMERA =====================//
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100)
-camera.position.x = 0
-camera.position.y = 0
-camera.position.z = 6
-camera.lookAt(0, 0, 0)
-scene.add(camera)
-
-//===================== CONTROLS =====================//
-const controls = new OrbitControls(camera, canvas)
-controls.enableDamping = true
-
-//===================== GUI =====================//
-const gui = new GUI()
-
-// Export/Import Settings
-const settingsFolder = gui.addFolder('Settings Export/Import')
-settingsFolder.add({
-    exportJSON: () => {
-        const settingsJSON = JSON.stringify(params, null, 2)
-        const blob = new Blob([settingsJSON], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'wave-settings.json'
-        a.click()
-        URL.revokeObjectURL(url)
-    }
-}, 'exportJSON').name('💾 Download Settings JSON')
-settingsFolder.open()
-
-// Line Settings Folder
-const lineFolder = gui.addFolder('Line Settings')
-lineFolder.add(params, 'lineCount', 20, 200, 1).name('Line Count').onChange(() => createShaderMesh())
-lineFolder.add(params, 'pointsPerLine', 50, 500, 10).name('Points Per Line').onChange(() => createShaderMesh())
-lineFolder.add(params, 'lineWidth', 0.1, 1, 0.01).name('Line Width').onChange(updateShaderUniforms)
-lineFolder.add(params, 'opacity', 0.1, 1, 0.05).name('Opacity').onChange(updateShaderUniforms)
-lineFolder.open()
-
-// Wave Settings Folder
-const waveFolder = gui.addFolder('Wave Settings')
-waveFolder.add(params, 'waveAmplitude', 0, 3, 0.1).name('Wave Amplitude').onChange(updateShaderUniforms)
-waveFolder.add(params, 'waveFrequency', 0.1, 5, 0.1).name('Wave Frequency').onChange(updateShaderUniforms)
-waveFolder.add(params, 'waveSpeed', 0, 2, 0.05).name('Wave Speed').onChange(updateShaderUniforms)
-waveFolder.open()
-
-// Twist Settings Folder
-const twistFolder = gui.addFolder('Twist Settings')
-twistFolder.add(params, 'twistAmount', 0, 10, 0.1).name('Twist Amount').onChange(updateShaderUniforms)
-twistFolder.add(params, 'twistFrequency', 0.1, 3, 0.1).name('Twist Frequency').onChange(updateShaderUniforms)
-twistFolder.add(params, 'twistSpeed', 0, 2, 0.05).name('Twist Speed').onChange(updateShaderUniforms)
-twistFolder.open()
-
-// Mesh Dimensions Folder
-const meshFolder = gui.addFolder('Mesh Dimensions')
-meshFolder.add(params, 'meshWidth', 5, 30, 0.5).name('Mesh Width').onChange(updateShaderUniforms)
-meshFolder.add(params, 'meshHeight', 0.5, 10, 0.1).name('Mesh Height').onChange(updateShaderUniforms)
-meshFolder.open()
-
-// Width Variation Folder
-const widthFolder = gui.addFolder('Width Variation')
-widthFolder.add(params, 'widthVariation', 0, 2, 0.05).name('Variation Strength').onChange(updateShaderUniforms)
-widthFolder.add(params, 'widthFrequency', 0.1, 10, 0.1).name('Variation Frequency').onChange(updateShaderUniforms)
-widthFolder.add(params, 'widthSpeed', 0, 2, 0.05).name('Animation Speed').onChange(updateShaderUniforms)
-widthFolder.add(params, 'widthPattern', 0, 1, 0.05).name('Pattern Type').onChange(updateShaderUniforms)
-widthFolder.open()
-
-// Color Settings Folder
-const colorFolder = gui.addFolder('Gradient Colors')
-colorFolder.add(params, 'colorStops', 1, 7, 1).name('Color Stops').onChange(() => {
-    updateShaderUniforms()
-    const activeColors = [
-        params.color1,
-        params.color2,
-        params.color3,
-        params.color4,
-        params.color5,
-        params.color6,
-        params.color7
-    ].map(color => new THREE.Color(color))
-    waveMaterial.uniforms.uColors.value = activeColors
-})
-colorFolder.addColor(params, 'color1').name('Color 1').onChange(() => {
-    waveMaterial.uniforms.uColors.value[0] = new THREE.Color(params.color1)
-})
-colorFolder.addColor(params, 'color2').name('Color 2').onChange(() => {
-    waveMaterial.uniforms.uColors.value[1] = new THREE.Color(params.color2)
-})
-colorFolder.addColor(params, 'color3').name('Color 3').onChange(() => {
-    waveMaterial.uniforms.uColors.value[2] = new THREE.Color(params.color3)
-})
-colorFolder.addColor(params, 'color4').name('Color 4').onChange(() => {
-    waveMaterial.uniforms.uColors.value[3] = new THREE.Color(params.color4)
-})
-colorFolder.addColor(params, 'color5').name('Color 5').onChange(() => {
-    waveMaterial.uniforms.uColors.value[4] = new THREE.Color(params.color5)
-})
-colorFolder.addColor(params, 'color6').name('Color 6').onChange(() => {
-    waveMaterial.uniforms.uColors.value[5] = new THREE.Color(params.color6)
-})
-colorFolder.addColor(params, 'color7').name('Color 7').onChange(() => {
-    waveMaterial.uniforms.uColors.value[6] = new THREE.Color(params.color7)
-})
-colorFolder.open()
-
-// Edge Fade Settings Folder
-const fadeFolder = gui.addFolder('Edge Fade')
-fadeFolder.add(params, 'fadeWidth', 0, 0.5, 0.01).name('Fade Width').onChange(() => {
-    edgeFadePass.uniforms.fadeWidth.value = params.fadeWidth
-})
-fadeFolder.add(params, 'fadeStrength', 0, 1, 0.05).name('Fade Strength').onChange(() => {
-    edgeFadePass.uniforms.fadeStrength.value = params.fadeStrength
-})
-fadeFolder.open()
-
-//===================== RENDERER =====================//
-const renderer = new THREE.WebGLRenderer({
-    canvas: canvas,
-    antialias: true,
-    alpha: true,
-    powerPreference: 'high-performance',
-})
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(window.devicePixelRatio)
-
-//===================== POST-PROCESSING =====================//
-const composer = new EffectComposer(renderer)
-
-// Render pass - renders the scene
-const renderPass = new RenderPass(scene, camera)
-composer.addPass(renderPass)
-
-// Edge fade pass - fades left and right edges
-const edgeFadePass = new ShaderPass(EdgeFadeShader)
-edgeFadePass.uniforms.backgroundColor.value = scene.background
-composer.addPass(edgeFadePass)
-
-// Update composer size
-composer.setSize(sizes.width, sizes.height)
-
-//===================== ANIMATE =====================//
-const clock = new THREE.Clock()
-
-const tick = () =>
-{
-    statsFPS.begin()
-    statsMS.begin()
-    statsMB.begin()
-    
-    const elapsedTime = clock.getElapsedTime()
-
-    // Update shader time uniform
-    if (waveMaterial) {
-        waveMaterial.uniforms.uTime.value = elapsedTime
-    }
-
-    // Update controls
-    controls.update()
-
-    // Render
-    composer.render()
-    
-    statsFPS.end()
-    statsMS.end()
-    statsMB.end()
-
-    // Call tick again on the next frame
-    window.requestAnimationFrame(tick)
-}
-
-tick()
+// Initialize the app
+new App();

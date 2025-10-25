@@ -1,11 +1,10 @@
 varying vec2 vUv;
 varying vec3 vPosition;
+varying vec3 vColor;
 
 uniform float uLineCount;
 uniform float uLineWidth;
 uniform float uOpacity;
-uniform vec3 uColors[7];
-uniform int uColorStops;
 uniform float uMeshHeight;
 
 void main() {
@@ -28,18 +27,5 @@ void main() {
     // Additional smoothing for very thin/stretched areas
     alpha = clamp(alpha, 0.0, 1.0);
 
-    // Calculate gradient color based on X position
-    float colorProgress = vUv.x;
-    vec3 finalColor = uColors[0];
-
-    if (uColorStops > 1) {
-        float colorIndex = colorProgress * float(uColorStops - 1);
-        int colorIndexFloor = int(floor(colorIndex));
-        int colorIndexCeil = min(colorIndexFloor + 1, uColorStops - 1);
-        float colorMix = fract(colorIndex);
-
-        finalColor = mix(uColors[colorIndexFloor], uColors[colorIndexCeil], colorMix);
-    }
-
-    gl_FragColor = vec4(finalColor, alpha * uOpacity);
+    gl_FragColor = vec4(vColor, alpha * uOpacity);
 }
