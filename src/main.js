@@ -165,6 +165,7 @@ class App {
       particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
       particleSpreadDepth: 5, // Z-axis spread depth
       maxConnectionDistance: 2.0,
+      particleSeed: 42857, // Seed for random generation
     };
 
     // Helper to get active colors as THREE.Color array
@@ -198,6 +199,7 @@ class App {
       boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
       boundsZ: this.params.particleSpreadDepth,
       maxConnectionDistance: this.params.maxConnectionDistance,
+      seed: this.params.particleSeed,
     });
     this.scene.add(this.particleNetwork.getGroup());
 
@@ -461,6 +463,38 @@ class App {
 
     // Particle Network Controls
     const particleFolder = this.gui.addFolder('Particle Network');
+
+    // Manual seed input
+    const seedController = particleFolder
+      .add(this.params, 'particleSeed', 0, 999999, 1)
+      .name('Seed Number')
+      .onChange((seed) => {
+        this.particleNetwork.params.seed = seed;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+
+    // Random seed button
+    particleFolder
+      .add({
+        randomSeed: () => {
+          // Generate new random seed
+          const newSeed = Math.floor(Math.random() * 999999);
+          this.params.particleSeed = newSeed;
+
+          // Update the GUI controller to show new value
+          seedController.updateDisplay();
+
+          // Apply the new seed
+          this.particleNetwork.params.seed = newSeed;
+          this.particleNetwork.params.colors = this.getActiveColors();
+          this.particleNetwork.params.colorStops = this.params.colorStops;
+          this.particleNetwork.recreate();
+        }
+      }, 'randomSeed')
+      .name('🎲 Random Seed');
+
     particleFolder
       .add(this.params, 'particleCount', 20, 200, 1)
       .name('Particle Count')
@@ -528,7 +562,7 @@ class App {
         this.particleNetwork.recreate();
       });
     particleFolder
-      .add(this.params, 'particleSpreadDepth', 0, 5.0, 10)
+      .add(this.params, 'particleSpreadDepth', 0, 10.0, 0.1)
       .name('Spread Depth (Z)')
       .onChange(() => {
         this.particleNetwork.params.boundsZ = this.params.particleSpreadDepth;

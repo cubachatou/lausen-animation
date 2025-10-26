@@ -22,14 +22,31 @@ export class ParticleNetwork {
       boundsX: params.boundsX || 10,
       boundsY: params.boundsY || 5,
       boundsZ: params.boundsZ || 0.5,
-      maxConnectionDistance: params.maxConnectionDistance || 3.0
+      maxConnectionDistance: params.maxConnectionDistance || 3.0,
+      seed: params.seed !== undefined ? params.seed : Date.now()
     };
 
     this.particles = [];
     this.connections = [];
     this.group = new THREE.Group();
 
+    // Initialize seeded random number generator
+    this.rng = this.createSeededRandom(this.params.seed);
+
     this.initialize();
+  }
+
+  /**
+   * Seeded random number generator (mulberry32 algorithm)
+   * Returns a function that generates deterministic random numbers
+   */
+  createSeededRandom(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
   }
 
   /**
@@ -87,7 +104,7 @@ export class ParticleNetwork {
     for (let i = 0; i < seedCount; i++) {
       const seedPoint = {
         x: (i / (seedCount - 1) - 0.5) * width * 0.9,
-        y: (Math.random() - 0.5) * height * 0.8
+        y: (this.rng() - 0.5) * height * 0.8
       };
       positions.push(seedPoint);
       activeList.push(seedPoint);
@@ -98,13 +115,13 @@ export class ParticleNetwork {
     // Generate points
     const maxAttempts = 30;
     while (activeList.length > 0 && positions.length < count) {
-      const randomIndex = Math.floor(Math.random() * activeList.length);
+      const randomIndex = Math.floor(this.rng() * activeList.length);
       const point = activeList[randomIndex];
       let found = false;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = minDistance * (1 + Math.random());
+        const angle = this.rng() * Math.PI * 2;
+        const radius = minDistance * (1 + this.rng());
         const newPoint = {
           x: point.x + Math.cos(angle) * radius,
           y: point.y + Math.sin(angle) * radius
@@ -188,8 +205,8 @@ export class ParticleNetwork {
     // If we didn't get enough points, fill with random positions (fallback)
     while (positions.length < count) {
       positions.push({
-        x: (Math.random() - 0.5) * width,
-        y: (Math.random() - 0.5) * height
+        x: (this.rng() - 0.5) * width,
+        y: (this.rng() - 0.5) * height
       });
     }
 
@@ -215,16 +232,16 @@ export class ParticleNetwork {
         position: new THREE.Vector3(
           positions[i].x,
           positions[i].y,
-          this.params.zPosition + (Math.random() - 0.5) * this.params.boundsZ
+          this.params.zPosition + (this.rng() - 0.5) * this.params.boundsZ
         ),
         startPosition: new THREE.Vector3(), // Will be set after position
         // Store movement offset and phase for sine wave movement
-        offsetX: Math.random() * Math.PI * 2,
-        offsetY: Math.random() * Math.PI * 2,
-        offsetZ: Math.random() * Math.PI * 2,
-        speedMultX: 0.5 + Math.random() * 1.0,
-        speedMultY: 0.5 + Math.random() * 1.0,
-        speedMultZ: 0.5 + Math.random() * 1.0,
+        offsetX: this.rng() * Math.PI * 2,
+        offsetY: this.rng() * Math.PI * 2,
+        offsetZ: this.rng() * Math.PI * 2,
+        speedMultX: 0.5 + this.rng() * 1.0,
+        speedMultY: 0.5 + this.rng() * 1.0,
+        speedMultZ: 0.5 + this.rng() * 1.0,
         connections: []
       };
       particle.startPosition.copy(particle.position);
@@ -651,6 +668,9 @@ export class ParticleNetwork {
     // Reset data
     this.particles = [];
     this.connections = [];
+
+    // Reinitialize seeded random number generator with same seed
+    this.rng = this.createSeededRandom(this.params.seed);
 
     // Reinitialize
     this.initialize();
