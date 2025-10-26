@@ -163,6 +163,7 @@ class App {
       particleZPosition: -3.0,
       particleSpreadWidth: 1.2, // Multiplier for particle spread (0.3-2.0)
       particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
+      particleSpreadDepth: 5, // Z-axis spread depth
       maxConnectionDistance: 2.0,
     };
 
@@ -195,6 +196,7 @@ class App {
       zPosition: this.params.particleZPosition,
       boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
       boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
+      boundsZ: this.params.particleSpreadDepth,
       maxConnectionDistance: this.params.maxConnectionDistance,
     });
     this.scene.add(this.particleNetwork.getGroup());
@@ -521,6 +523,15 @@ class App {
       .name('Spread Height')
       .onChange(() => {
         this.particleNetwork.params.boundsY = this.params.meshHeight * this.params.particleSpreadHeight;
+        this.particleNetwork.params.colors = this.getActiveColors();
+        this.particleNetwork.params.colorStops = this.params.colorStops;
+        this.particleNetwork.recreate();
+      });
+    particleFolder
+      .add(this.params, 'particleSpreadDepth', 0, 5.0, 10)
+      .name('Spread Depth (Z)')
+      .onChange(() => {
+        this.particleNetwork.params.boundsZ = this.params.particleSpreadDepth;
         this.particleNetwork.params.colors = this.getActiveColors();
         this.particleNetwork.params.colorStops = this.params.colorStops;
         this.particleNetwork.recreate();

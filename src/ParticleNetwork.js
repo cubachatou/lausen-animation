@@ -21,6 +21,7 @@ export class ParticleNetwork {
       zPosition: params.zPosition || -3.0,
       boundsX: params.boundsX || 10,
       boundsY: params.boundsY || 5,
+      boundsZ: params.boundsZ || 0.5,
       maxConnectionDistance: params.maxConnectionDistance || 3.0
     };
 
@@ -214,7 +215,7 @@ export class ParticleNetwork {
         position: new THREE.Vector3(
           positions[i].x,
           positions[i].y,
-          this.params.zPosition + (Math.random() - 0.5) * 0.5
+          this.params.zPosition + (Math.random() - 0.5) * this.params.boundsZ
         ),
         startPosition: new THREE.Vector3(), // Will be set after position
         // Store movement offset and phase for sine wave movement
