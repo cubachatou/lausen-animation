@@ -1,6 +1,5 @@
 import './style.css';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GUI } from 'lil-gui';
 import Stats from 'stats.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -121,7 +120,7 @@ class App {
 
     this.params = {
       lineCount: 50,
-      pointsPerLine: 100,
+      pointsPerLine: 7,
       lineWidth: 0.3,
       opacity: 0.7,
 
@@ -134,7 +133,7 @@ class App {
       twistSpeed: 0.15,
 
       meshWidth: 25,
-      meshHeight: 3,
+      meshHeight: 5,
 
       widthVariation: 0.5,
       widthFrequency: 5.0,
@@ -160,10 +159,10 @@ class App {
       particleOpacity: 0.9,
       movementSpeed: 0.1,
       movementRange: 1.0,
-      particleZPosition: -3.0,
       particleSpreadWidth: 1.2, // Multiplier for particle spread (0.3-2.0)
       particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
       particleSpreadDepth: 5, // Z-axis spread depth
+      particleScaleRange: 0.7, // Depth-based scale variation (0 = no variation, 1 = full variation)
       maxConnectionDistance: 2.0,
       particleSeed: 42857, // Seed for random generation
     };
@@ -194,10 +193,10 @@ class App {
       colorStops: this.params.colorStops,
       movementSpeed: this.params.movementSpeed,
       movementRange: this.params.movementRange,
-      zPosition: this.params.particleZPosition,
       boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
       boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
       boundsZ: this.params.particleSpreadDepth,
+      scaleRange: this.params.particleScaleRange,
       maxConnectionDistance: this.params.maxConnectionDistance,
       seed: this.params.particleSeed,
     });
@@ -205,7 +204,6 @@ class App {
 
     this.setupStats();
     this.setupCamera();
-    this.setupControls();
     this.setupRenderer();
     this.setupComposer();
     this.setupGUI();
@@ -239,15 +237,19 @@ class App {
   }
 
   setupCamera() {
-    this.camera = new THREE.PerspectiveCamera(75, this.sizes.width / this.sizes.height, 0.1, 100);
+    const aspect = this.sizes.width / this.sizes.height;
+    const frustumSize = 12;
+    this.camera = new THREE.OrthographicCamera(
+      (frustumSize * aspect) / -2,
+      (frustumSize * aspect) / 2,
+      frustumSize / 2,
+      frustumSize / -2,
+      0.1,
+      100
+    );
     this.camera.position.set(0, 0, 6);
     this.camera.lookAt(0, 0, 0);
     this.scene.add(this.camera);
-  }
-
-  setupControls() {
-    this.controls = new OrbitControls(this.camera, this.canvas);
-    this.controls.enableDamping = true;
   }
 
   setupRenderer() {
@@ -305,7 +307,7 @@ class App {
         this.scene.add(this.wave.mesh);
       });
     lineFolder
-      .add(this.params, 'pointsPerLine', 50, 500, 10)
+      .add(this.params, 'pointsPerLine', 5, 500, 1)
       .name('Points Per Line')
       .onChange(() => {
         this.scene.remove(this.wave.mesh);
@@ -468,7 +470,7 @@ class App {
     const seedController = particleFolder
       .add(this.params, 'particleSeed', 0, 999999, 1)
       .name('Seed Number')
-      .onChange((seed) => {
+      .onChange(seed => {
         this.particleNetwork.params.seed = seed;
         this.particleNetwork.params.colors = this.getActiveColors();
         this.particleNetwork.params.colorStops = this.params.colorStops;
@@ -477,22 +479,25 @@ class App {
 
     // Random seed button
     particleFolder
-      .add({
-        randomSeed: () => {
-          // Generate new random seed
-          const newSeed = Math.floor(Math.random() * 999999);
-          this.params.particleSeed = newSeed;
+      .add(
+        {
+          randomSeed: () => {
+            // Generate new random seed
+            const newSeed = Math.floor(Math.random() * 999999);
+            this.params.particleSeed = newSeed;
 
-          // Update the GUI controller to show new value
-          seedController.updateDisplay();
+            // Update the GUI controller to show new value
+            seedController.updateDisplay();
 
-          // Apply the new seed
-          this.particleNetwork.params.seed = newSeed;
-          this.particleNetwork.params.colors = this.getActiveColors();
-          this.particleNetwork.params.colorStops = this.params.colorStops;
-          this.particleNetwork.recreate();
-        }
-      }, 'randomSeed')
+            // Apply the new seed
+            this.particleNetwork.params.seed = newSeed;
+            this.particleNetwork.params.colors = this.getActiveColors();
+            this.particleNetwork.params.colorStops = this.params.colorStops;
+            this.particleNetwork.recreate();
+          },
+        },
+        'randomSeed'
+      )
       .name('🎲 Random Seed');
 
     particleFolder
@@ -538,10 +543,10 @@ class App {
         this.particleNetwork.params.movementRange = this.params.movementRange;
       });
     particleFolder
-      .add(this.params, 'particleZPosition', -10, 0, 0.1)
-      .name('Z Position')
+      .add(this.params, 'particleScaleRange', 0, 1, 0.05)
+      .name('Depth Scale Variation')
       .onChange(() => {
-        this.particleNetwork.updateZPosition(this.params.particleZPosition);
+        this.particleNetwork.params.scaleRange = this.params.particleScaleRange;
       });
     particleFolder
       .add(this.params, 'particleSpreadWidth', 0.3, 2.0, 0.1)
@@ -587,7 +592,12 @@ class App {
       this.sizes.width = window.innerWidth;
       this.sizes.height = window.innerHeight;
 
-      this.camera.aspect = this.sizes.width / this.sizes.height;
+      const aspect = this.sizes.width / this.sizes.height;
+      const frustumSize = 10;
+      this.camera.left = (frustumSize * aspect) / -2;
+      this.camera.right = (frustumSize * aspect) / 2;
+      this.camera.top = frustumSize / 2;
+      this.camera.bottom = frustumSize / -2;
       this.camera.updateProjectionMatrix();
 
       this.renderer.setSize(this.sizes.width, this.sizes.height);
@@ -616,7 +626,6 @@ class App {
       this.particleNetwork.update(elapsedTime);
     }
 
-    this.controls.update();
     this.composer.render();
 
     this.statsFPS.end();
