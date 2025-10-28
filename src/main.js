@@ -6,106 +6,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { EdgeFadeShader } from './edgeFade.js';
-import { WaveShader } from './waveShader.js';
+import { Wave } from './wave.js';
 import { ParticleNetwork } from './ParticleNetwork.js';
-
-class Wave {
-  constructor(params) {
-    this.params = params;
-    this.material = null;
-    this.mesh = null;
-    this.createMesh();
-  }
-
-  createMesh() {
-    if (this.mesh) {
-      this.mesh.geometry.dispose();
-      this.mesh.material.dispose();
-      // Note: scene.remove is handled by the caller
-    }
-
-    const activeColors = [
-      this.params.color1,
-      this.params.color2,
-      this.params.color3,
-      this.params.color4,
-      this.params.color5,
-      this.params.color6,
-      this.params.color7,
-    ].map(color => new THREE.Color(color));
-
-    const geometry = new THREE.PlaneGeometry(1, 1, this.params.pointsPerLine - 1, this.params.lineCount - 1);
-
-    // Update WaveShader uniforms with current params
-    WaveShader.uniforms.uLineCount.value = this.params.lineCount;
-    WaveShader.uniforms.uLineWidth.value = this.params.lineWidth;
-    WaveShader.uniforms.uOpacity.value = this.params.opacity;
-    WaveShader.uniforms.uWaveAmplitude.value = this.params.waveAmplitude;
-    WaveShader.uniforms.uWaveFrequency.value = this.params.waveFrequency;
-    WaveShader.uniforms.uWaveSpeed.value = this.params.waveSpeed;
-    WaveShader.uniforms.uTwistAmount.value = this.params.twistAmount;
-    WaveShader.uniforms.uTwistFrequency.value = this.params.twistFrequency;
-    WaveShader.uniforms.uTwistSpeed.value = this.params.twistSpeed;
-    WaveShader.uniforms.uMeshWidth.value = this.params.meshWidth;
-    WaveShader.uniforms.uMeshHeight.value = this.params.meshHeight;
-    WaveShader.uniforms.uWidthVariation.value = this.params.widthVariation;
-    WaveShader.uniforms.uWidthFrequency.value = this.params.widthFrequency;
-    WaveShader.uniforms.uWidthSpeed.value = this.params.widthSpeed;
-    WaveShader.uniforms.uWidthPattern.value = this.params.widthPattern;
-    WaveShader.uniforms.uColors.value = activeColors;
-    WaveShader.uniforms.uColorStops.value = this.params.colorStops;
-
-    this.material = new THREE.ShaderMaterial({
-      vertexShader: WaveShader.vertexShader,
-      fragmentShader: WaveShader.fragmentShader,
-      uniforms: WaveShader.uniforms,
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    });
-
-    this.mesh = new THREE.Mesh(geometry, this.material);
-  }
-
-  updateUniforms() {
-    if (!this.material) return;
-
-    WaveShader.uniforms.uLineCount.value = this.params.lineCount;
-    WaveShader.uniforms.uLineWidth.value = this.params.lineWidth;
-    WaveShader.uniforms.uOpacity.value = this.params.opacity;
-    WaveShader.uniforms.uWaveAmplitude.value = this.params.waveAmplitude;
-    WaveShader.uniforms.uWaveFrequency.value = this.params.waveFrequency;
-    WaveShader.uniforms.uWaveSpeed.value = this.params.waveSpeed;
-    WaveShader.uniforms.uTwistAmount.value = this.params.twistAmount;
-    WaveShader.uniforms.uTwistFrequency.value = this.params.twistFrequency;
-    WaveShader.uniforms.uTwistSpeed.value = this.params.twistSpeed;
-    WaveShader.uniforms.uMeshWidth.value = this.params.meshWidth;
-    WaveShader.uniforms.uMeshHeight.value = this.params.meshHeight;
-    WaveShader.uniforms.uWidthVariation.value = this.params.widthVariation;
-    WaveShader.uniforms.uWidthFrequency.value = this.params.widthFrequency;
-    WaveShader.uniforms.uWidthSpeed.value = this.params.widthSpeed;
-    WaveShader.uniforms.uWidthPattern.value = this.params.widthPattern;
-    WaveShader.uniforms.uColorStops.value = this.params.colorStops;
-  }
-
-  updateColors() {
-    const activeColors = [
-      this.params.color1,
-      this.params.color2,
-      this.params.color3,
-      this.params.color4,
-      this.params.color5,
-      this.params.color6,
-      this.params.color7,
-    ].map(color => new THREE.Color(color));
-    WaveShader.uniforms.uColors.value = activeColors;
-  }
-
-  updateSingleColor(index) {
-    WaveShader.uniforms.uColors.value[index] = new THREE.Color(this.params[`color${index + 1}`]);
-  }
-}
 
 class App {
   constructor() {
@@ -619,7 +521,7 @@ class App {
 
     const elapsedTime = this.clock.getElapsedTime();
 
-    if (this.wave.material) WaveShader.uniforms.uTime.value = elapsedTime;
+    if (this.wave.material) this.wave.material.uniforms.uTime.value = elapsedTime;
 
     // Update particle network
     if (this.particleNetwork) {
