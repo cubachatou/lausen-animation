@@ -1,7 +1,7 @@
 // Wave Class for animated wave mesh
 import * as THREE from 'three';
-import vertexShader from './shaders/waveVertex.glsl';
-import fragmentShader from './shaders/waveFragment.glsl';
+import vertexShader from './shaders/wave/vertex.glsl';
+import fragmentShader from './shaders/wave/fragment.glsl';
 
 export class Wave {
   constructor(params) {

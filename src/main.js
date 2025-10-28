@@ -7,7 +7,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { EdgeFadeShader } from './edgeFade.js';
 import { Wave } from './wave.js';
-import { ParticleNetwork } from './ParticleNetwork.js';
+import { ParticleNetwork } from './particleNetwork.js';
 
 class App {
   constructor() {

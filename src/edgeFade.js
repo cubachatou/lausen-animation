@@ -1,7 +1,7 @@
 // Edge Fade Shader for post-processing
 import * as THREE from 'three';
-import vertexShader from './shaders/edgeFadeVertex.glsl';
-import fragmentShader from './shaders/edgeFadeFragment.glsl';
+import vertexShader from './shaders/edgeFade/vertex.glsl';
+import fragmentShader from './shaders/edgeFade/fragment.glsl';
 
 export const EdgeFadeShader = {
   uniforms: {
