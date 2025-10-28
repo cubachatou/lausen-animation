@@ -2,29 +2,31 @@ import * as THREE from 'three';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import particleVertexShader from './shaders/particleVertex.glsl';
+import particleFragmentShader from './shaders/particleFragment.glsl';
 
 /**
  * ParticleNetwork creates a network graph of particles connected by lines.
  * Particles move chaotically within bounds, and connections are fixed at initialization.
  */
 export class ParticleNetwork {
-  constructor(params = {}) {
+  constructor(params) {
     this.params = {
-      particleCount: params.particleCount || 50,
-      particleSize: params.particleSize || 0.05,
-      lineWidth: params.lineWidth || 2.0,
-      opacity: params.opacity || 0.6,
-      colors: params.colors || [new THREE.Color('#4a9eff')],
-      colorStops: params.colorStops || 1,
-      movementSpeed: params.movementSpeed || 1.0,
-      movementRange: params.movementRange || 1.5,
-      zPosition: params.zPosition || -3.0,
-      boundsX: params.boundsX || 10,
-      boundsY: params.boundsY || 5,
-      boundsZ: params.boundsZ || 0.5,
-      maxConnectionDistance: params.maxConnectionDistance || 3.0,
-      scaleRange: params.scaleRange !== undefined ? params.scaleRange : 0.7,
-      seed: params.seed !== undefined ? params.seed : Date.now()
+      particleCount: params.particleCount,
+      particleSize: params.particleSize,
+      lineWidth: params.lineWidth,
+      opacity: params.opacity,
+      colors: params.colors,
+      colorStops: params.colorStops,
+      movementSpeed: params.movementSpeed,
+      movementRange: params.movementRange,
+      zPosition: params.zPosition ?? -3.0,
+      boundsX: params.boundsX,
+      boundsY: params.boundsY,
+      boundsZ: params.boundsZ,
+      maxConnectionDistance: params.maxConnectionDistance,
+      scaleRange: params.scaleRange,
+      seed: params.seed,
     };
 
     this.particles = [];
@@ -42,12 +44,12 @@ export class ParticleNetwork {
    * Returns a function that generates deterministic random numbers
    */
   createSeededRandom(seed) {
-    return function() {
-      let t = seed += 0x6D2B79F5;
-      t = Math.imul(t ^ t >>> 15, t | 1);
-      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    }
+    return function () {
+      let t = (seed += 0x6d2b79f5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
   }
 
   /**
@@ -56,9 +58,7 @@ export class ParticleNetwork {
   isNearlyCollinear(p1, p2, p3, threshold = 0.15) {
     // Calculate the area of triangle formed by three points
     // If area is very small, points are nearly collinear
-    const area = Math.abs(
-      (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
-    ) / 2;
+    const area = Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)) / 2;
 
     // Calculate the perimeter
     const d12 = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
@@ -67,7 +67,7 @@ export class ParticleNetwork {
     const perimeter = d12 + d23 + d31;
 
     // If area/perimeter ratio is very small, points are collinear
-    return (area / perimeter) < threshold;
+    return area / perimeter < threshold;
   }
 
   /**
@@ -83,7 +83,7 @@ export class ParticleNetwork {
 
     // If we have fewer particles than can fit, reduce minDistance to spread them out
     if (count < maxParticlesInRow * 2) {
-      minDistance = Math.min(minDistance, width / Math.sqrt(count) * 0.6);
+      minDistance = Math.min(minDistance, (width / Math.sqrt(count)) * 0.6);
     }
 
     const cellSize = minDistance / Math.sqrt(2);
@@ -105,7 +105,7 @@ export class ParticleNetwork {
     for (let i = 0; i < seedCount; i++) {
       const seedPoint = {
         x: (i / (seedCount - 1) - 0.5) * width * 0.9,
-        y: (this.rng() - 0.5) * height * 0.8
+        y: (this.rng() - 0.5) * height * 0.8,
       };
       positions.push(seedPoint);
       activeList.push(seedPoint);
@@ -125,7 +125,7 @@ export class ParticleNetwork {
         const radius = minDistance * (1 + this.rng());
         const newPoint = {
           x: point.x + Math.cos(angle) * radius,
-          y: point.y + Math.sin(angle) * radius
+          y: point.y + Math.sin(angle) * radius,
         };
 
         // Check if in bounds
@@ -151,10 +151,7 @@ export class ParticleNetwork {
             const checkIdx = checkY * gridWidth + checkX;
             const neighbor = grid[checkIdx];
             if (neighbor) {
-              const dist = Math.sqrt(
-                Math.pow(newPoint.x - neighbor.x, 2) +
-                Math.pow(newPoint.y - neighbor.y, 2)
-              );
+              const dist = Math.sqrt(Math.pow(newPoint.x - neighbor.x, 2) + Math.pow(newPoint.y - neighbor.y, 2));
               if (dist < minDistance) {
                 valid = false;
                 break;
@@ -169,13 +166,10 @@ export class ParticleNetwork {
           let isCollinear = false;
           if (positions.length >= 2) {
             // Check if this new point is collinear with any pair of existing nearby points
-            const nearbyPositions = positions
-              .filter(p => {
-                const dist = Math.sqrt(
-                  Math.pow(newPoint.x - p.x, 2) + Math.pow(newPoint.y - p.y, 2)
-                );
-                return dist < minDistance * 3;
-              });
+            const nearbyPositions = positions.filter(p => {
+              const dist = Math.sqrt(Math.pow(newPoint.x - p.x, 2) + Math.pow(newPoint.y - p.y, 2));
+              return dist < minDistance * 3;
+            });
 
             for (let i = 0; i < nearbyPositions.length - 1; i++) {
               for (let j = i + 1; j < nearbyPositions.length; j++) {
@@ -207,7 +201,7 @@ export class ParticleNetwork {
     while (positions.length < count) {
       positions.push({
         x: (this.rng() - 0.5) * width,
-        y: (this.rng() - 0.5) * height
+        y: (this.rng() - 0.5) * height,
       });
     }
 
@@ -243,7 +237,7 @@ export class ParticleNetwork {
         speedMultX: 0.5 + this.rng() * 1.0,
         speedMultY: 0.5 + this.rng() * 1.0,
         speedMultZ: 0.5 + this.rng() * 1.0,
-        connections: []
+        connections: [],
       };
       particle.startPosition.copy(particle.position);
       this.particles.push(particle);
@@ -273,9 +267,7 @@ export class ParticleNetwork {
 
       for (const connectedId of connected) {
         for (const unconnectedId of unconnected) {
-          const dist = this.particles[connectedId].position.distanceTo(
-            this.particles[unconnectedId].position
-          );
+          const dist = this.particles[connectedId].position.distanceTo(this.particles[unconnectedId].position);
           if (dist < minDist) {
             minDist = dist;
             closestPair = [connectedId, unconnectedId];
@@ -415,39 +407,15 @@ export class ParticleNetwork {
     // Create custom shader material for gradient colors with depth-based scaling
     const material = new THREE.ShaderMaterial({
       uniforms: {
-        opacity: { value: this.params.opacity }
+        opacity: { value: this.params.opacity },
       },
-      vertexShader: `
-        attribute vec3 instanceColor;
-        attribute float instanceScale;
-        varying vec3 vColor;
-
-        void main() {
-          vColor = instanceColor;
-
-          // Apply depth-based scale to the position
-          vec3 scaledPosition = position * instanceScale;
-
-          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(scaledPosition, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform float opacity;
-        varying vec3 vColor;
-
-        void main() {
-          gl_FragColor = vec4(vColor, opacity);
-        }
-      `,
+      vertexShader: particleVertexShader,
+      fragmentShader: particleFragmentShader,
       transparent: true,
-      depthWrite: false
+      depthWrite: false,
     });
 
-    this.particleMesh = new THREE.InstancedMesh(
-      geometry,
-      material,
-      this.params.particleCount
-    );
+    this.particleMesh = new THREE.InstancedMesh(geometry, material, this.params.particleCount);
 
     // Set up instance colors and scales
     const colors = new Float32Array(this.params.particleCount * 3);
@@ -469,12 +437,8 @@ export class ParticleNetwork {
       scales[i] = 1.0 - this.params.scaleRange + normalizedZ * this.params.scaleRange * 2;
     }
 
-    this.particleMesh.geometry.setAttribute('instanceColor',
-      new THREE.InstancedBufferAttribute(colors, 3)
-    );
-    this.particleMesh.geometry.setAttribute('instanceScale',
-      new THREE.InstancedBufferAttribute(scales, 1)
-    );
+    this.particleMesh.geometry.setAttribute('instanceColor', new THREE.InstancedBufferAttribute(colors, 3));
+    this.particleMesh.geometry.setAttribute('instanceScale', new THREE.InstancedBufferAttribute(scales, 1));
 
     // Set initial positions
     const matrix = new THREE.Matrix4();
@@ -523,10 +487,15 @@ export class ParticleNetwork {
       opacity: this.params.opacity * 0.5,
       depthWrite: false,
       alphaToCoverage: true,
+      dashed: false,
+      worldUnits: false,
     });
 
     // Set resolution for proper line rendering
-    material.resolution.set(window.innerWidth, window.innerHeight);
+    material.resolution.set(
+      window.innerWidth * Math.min(window.devicePixelRatio, 2),
+      window.innerHeight * Math.min(window.devicePixelRatio, 2)
+    );
 
     this.lineMesh = new LineSegments2(geometry, material);
     this.group.add(this.lineMesh);
@@ -674,7 +643,10 @@ export class ParticleNetwork {
    */
   updateResolution(width, height) {
     if (this.lineMesh && this.lineMesh.material) {
-      this.lineMesh.material.resolution.set(width, height);
+      this.lineMesh.material.resolution.set(
+        width * Math.min(window.devicePixelRatio, 2),
+        height * Math.min(window.devicePixelRatio, 2)
+      );
     }
   }
 

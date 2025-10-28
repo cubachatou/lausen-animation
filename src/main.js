@@ -162,7 +162,7 @@ class App {
       particleSpreadWidth: 1.2, // Multiplier for particle spread (0.3-2.0)
       particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
       particleSpreadDepth: 5, // Z-axis spread depth
-      particleScaleRange: 0.7, // Depth-based scale variation (0 = no variation, 1 = full variation)
+      particleScaleRange: 0.5, // Depth-based scale variation (0 = no variation, 1 = full variation)
       maxConnectionDistance: 2.0,
       particleSeed: 42857, // Seed for random generation
     };
@@ -255,13 +255,14 @@ class App {
   setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: false,
       alpha: true,
+      premultipliedAlpha: false,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setSize(this.sizes.width, this.sizes.height);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
 
   setupComposer() {
@@ -601,7 +602,7 @@ class App {
       this.camera.updateProjectionMatrix();
 
       this.renderer.setSize(this.sizes.width, this.sizes.height);
-      this.renderer.setPixelRatio(window.devicePixelRatio);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
       this.composer.setSize(this.sizes.width, this.sizes.height);
 
