@@ -44,12 +44,9 @@ export class Wave {
         uTwistAmount: { value: this.params.twistAmount },
         uTwistFrequency: { value: this.params.twistFrequency },
         uTwistSpeed: { value: this.params.twistSpeed },
+        uTwistStagger: { value: this.params.twistStagger },
         uMeshWidth: { value: this.params.meshWidth },
         uMeshHeight: { value: this.params.meshHeight },
-        uWidthVariation: { value: this.params.widthVariation },
-        uWidthFrequency: { value: this.params.widthFrequency },
-        uWidthSpeed: { value: this.params.widthSpeed },
-        uWidthPattern: { value: this.params.widthPattern },
         uColors: { value: activeColors },
         uColorStops: { value: this.params.colorStops },
       },
@@ -74,12 +71,9 @@ export class Wave {
     this.material.uniforms.uTwistAmount.value = this.params.twistAmount;
     this.material.uniforms.uTwistFrequency.value = this.params.twistFrequency;
     this.material.uniforms.uTwistSpeed.value = this.params.twistSpeed;
+    this.material.uniforms.uTwistStagger.value = this.params.twistStagger;
     this.material.uniforms.uMeshWidth.value = this.params.meshWidth;
     this.material.uniforms.uMeshHeight.value = this.params.meshHeight;
-    this.material.uniforms.uWidthVariation.value = this.params.widthVariation;
-    this.material.uniforms.uWidthFrequency.value = this.params.widthFrequency;
-    this.material.uniforms.uWidthSpeed.value = this.params.widthSpeed;
-    this.material.uniforms.uWidthPattern.value = this.params.widthPattern;
     this.material.uniforms.uColorStops.value = this.params.colorStops;
   }
 

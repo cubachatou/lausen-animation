@@ -21,26 +21,22 @@ class App {
     };
 
     this.params = {
-      lineCount: 50,
+      lineCount: 60,
       pointsPerLine: 7,
       lineWidth: 0.3,
       opacity: 0.7,
 
-      waveAmplitude: 1.5,
-      waveFrequency: 3,
-      waveSpeed: 0.3,
+      waveAmplitude: 0,
+      waveFrequency: 0,
+      waveSpeed: 0,
 
       twistAmount: 5,
-      twistFrequency: 1,
+      twistFrequency: 0.7,
       twistSpeed: 0.15,
+      twistStagger: 0.2,
 
       meshWidth: 25,
-      meshHeight: 5,
-
-      widthVariation: 0.5,
-      widthFrequency: 5.0,
-      widthSpeed: 0.2,
-      widthPattern: 0.5,
+      meshHeight: 8,
 
       color1: '#9d00ff',
       color2: '#bf94ff',
@@ -254,6 +250,10 @@ class App {
       .add(this.params, 'twistSpeed', 0, 2, 0.05)
       .name('Twist Speed')
       .onChange(() => this.wave.updateUniforms());
+    twistFolder
+      .add(this.params, 'twistStagger', 0, 20, 0.1)
+      .name('Twist Stagger')
+      .onChange(() => this.wave.updateUniforms());
     twistFolder.open();
 
     const meshFolder = this.gui.addFolder('Mesh Dimensions');
@@ -266,25 +266,6 @@ class App {
       .name('Mesh Height')
       .onChange(() => this.wave.updateUniforms());
     meshFolder.open();
-
-    const widthFolder = this.gui.addFolder('Width Variation');
-    widthFolder
-      .add(this.params, 'widthVariation', 0, 2, 0.05)
-      .name('Variation Strength')
-      .onChange(() => this.wave.updateUniforms());
-    widthFolder
-      .add(this.params, 'widthFrequency', 0.1, 10, 0.1)
-      .name('Variation Frequency')
-      .onChange(() => this.wave.updateUniforms());
-    widthFolder
-      .add(this.params, 'widthSpeed', 0, 2, 0.05)
-      .name('Animation Speed')
-      .onChange(() => this.wave.updateUniforms());
-    widthFolder
-      .add(this.params, 'widthPattern', 0, 1, 0.05)
-      .name('Pattern Type')
-      .onChange(() => this.wave.updateUniforms());
-    widthFolder.open();
 
     const colorFolder = this.gui.addFolder('Gradient Colors');
     colorFolder

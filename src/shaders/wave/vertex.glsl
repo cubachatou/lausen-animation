@@ -9,12 +9,9 @@ uniform float uWaveSpeed;
 uniform float uTwistAmount;
 uniform float uTwistFrequency;
 uniform float uTwistSpeed;
+uniform float uTwistStagger;
 uniform float uMeshWidth;
 uniform float uMeshHeight;
-uniform float uWidthVariation;
-uniform float uWidthFrequency;
-uniform float uWidthSpeed;
-uniform float uWidthPattern;
 uniform vec3 uColors[7];
 uniform int uColorStops;
 
@@ -34,28 +31,14 @@ void main() {
     // Base Y position for this line
     float baseY = (lineProgress - 0.5) * uMeshHeight;
 
-    // Calculate width variation factor
-    // Combine multiple waves for more interesting patterns
-    float widthWave1 = sin(xProgress * 3.14159 * uWidthFrequency + uTime * uWidthSpeed);
-    float widthWave2 = sin(xProgress * 3.14159 * uWidthFrequency * 0.7 - uTime * uWidthSpeed * 0.5);
-    
-    // Blend between smooth (sin) and sharper (pow) patterns based on widthPattern
-    float smoothPattern = (widthWave1 + widthWave2 * 0.5) / 1.5;
-    float sharpPattern = pow(abs(smoothPattern), 1.0 + uWidthPattern * 2.0) * sign(smoothPattern);
-    float widthMod = mix(smoothPattern, sharpPattern, uWidthPattern);
-    
-    // Apply width variation (1.0 = normal width, can go smaller or larger)
-    float widthFactor = 1.0 + widthMod * uWidthVariation;
-    
-    // Scale the baseY by the width factor to create thinner/wider areas
-    baseY = baseY * widthFactor;
-
     // Create flowing wave motion
     float wave1 = sin(xProgress * 3.14159 * uWaveFrequency + uTime * uWaveSpeed) * uWaveAmplitude;
     float wave2 = sin(xProgress * 3.14159 * uWaveFrequency * 2.3 - uTime * uWaveSpeed * 0.7) * uWaveAmplitude * 0.4;
 
-    // Create twist effect
-    float twistAngle = sin(xProgress * 3.14159 * uTwistFrequency + uTime * uTwistSpeed) * uTwistAmount;
+    // Create twist effect with stagger based on line position
+    // Stagger adds a progressive offset based on which line we're on (lineProgress)
+    float staggerOffset = lineProgress * uTwistStagger;
+    float twistAngle = sin(xProgress * 3.14159 * uTwistFrequency + uTime * uTwistSpeed + staggerOffset) * uTwistAmount;
 
     // Apply twist rotation
     pos.y = baseY * cos(twistAngle) + wave1 + wave2;
