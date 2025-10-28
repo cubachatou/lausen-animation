@@ -255,9 +255,8 @@ class App {
   setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: false,
+      antialias: true,
       alpha: true,
-      premultipliedAlpha: false,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
