@@ -26,17 +26,8 @@ class App {
       lineWidth: 0.3,
       opacity: 0.7,
 
-      waveAmplitude: 0,
-      waveFrequency: 0,
-      waveSpeed: 0,
-
-      twistAmount: 5,
-      twistFrequency: 0.7,
-      twistSpeed: 0.15,
-      twistStagger: 0.2,
-
       meshWidth: 25,
-      meshHeight: 8,
+      meshHeight: 5,
 
       color1: '#9d00ff',
       color2: '#bf94ff',
@@ -82,23 +73,23 @@ class App {
     this.scene.add(this.wave.mesh);
 
     // Initialize particle network
-    this.particleNetwork = new ParticleNetwork({
-      particleCount: this.params.particleCount,
-      particleSize: this.params.particleSize,
-      lineWidth: this.params.particleLineWidth,
-      opacity: this.params.particleOpacity,
-      colors: this.getActiveColors(),
-      colorStops: this.params.colorStops,
-      movementSpeed: this.params.movementSpeed,
-      movementRange: this.params.movementRange,
-      boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
-      boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
-      boundsZ: this.params.particleSpreadDepth,
-      scaleRange: this.params.particleScaleRange,
-      maxConnectionDistance: this.params.maxConnectionDistance,
-      seed: this.params.particleSeed,
-    });
-    this.scene.add(this.particleNetwork.getGroup());
+    // this.particleNetwork = new ParticleNetwork({
+    //   particleCount: this.params.particleCount,
+    //   particleSize: this.params.particleSize,
+    //   lineWidth: this.params.particleLineWidth,
+    //   opacity: this.params.particleOpacity,
+    //   colors: this.getActiveColors(),
+    //   colorStops: this.params.colorStops,
+    //   movementSpeed: this.params.movementSpeed,
+    //   movementRange: this.params.movementRange,
+    //   boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
+    //   boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
+    //   boundsZ: this.params.particleSpreadDepth,
+    //   scaleRange: this.params.particleScaleRange,
+    //   maxConnectionDistance: this.params.maxConnectionDistance,
+    //   seed: this.params.particleSeed,
+    // });
+    // this.scene.add(this.particleNetwork.getGroup());
 
     this.setupStats();
     this.setupCamera();
@@ -118,20 +109,6 @@ class App {
     this.statsFPS.dom.style.position = 'absolute';
     this.statsFPS.dom.style.left = '0px';
     this.statsFPS.dom.style.top = '0px';
-
-    this.statsMS = new Stats();
-    this.statsMS.showPanel(1);
-    document.body.appendChild(this.statsMS.dom);
-    this.statsMS.dom.style.position = 'absolute';
-    this.statsMS.dom.style.left = '0px';
-    this.statsMS.dom.style.top = '48px';
-
-    this.statsMB = new Stats();
-    this.statsMB.showPanel(2);
-    document.body.appendChild(this.statsMB.dom);
-    this.statsMB.dom.style.position = 'absolute';
-    this.statsMB.dom.style.left = '0px';
-    this.statsMB.dom.style.top = '96px';
   }
 
   setupCamera() {
@@ -221,40 +198,6 @@ class App {
       .name('Opacity')
       .onChange(() => this.wave.updateUniforms());
     lineFolder.open();
-
-    const waveFolder = this.gui.addFolder('Wave Settings');
-    waveFolder
-      .add(this.params, 'waveAmplitude', 0, 3, 0.1)
-      .name('Wave Amplitude')
-      .onChange(() => this.wave.updateUniforms());
-    waveFolder
-      .add(this.params, 'waveFrequency', 0.1, 5, 0.1)
-      .name('Wave Frequency')
-      .onChange(() => this.wave.updateUniforms());
-    waveFolder
-      .add(this.params, 'waveSpeed', 0, 2, 0.05)
-      .name('Wave Speed')
-      .onChange(() => this.wave.updateUniforms());
-    waveFolder.open();
-
-    const twistFolder = this.gui.addFolder('Twist Settings');
-    twistFolder
-      .add(this.params, 'twistAmount', 0, 10, 0.1)
-      .name('Twist Amount')
-      .onChange(() => this.wave.updateUniforms());
-    twistFolder
-      .add(this.params, 'twistFrequency', 0.1, 3, 0.1)
-      .name('Twist Frequency')
-      .onChange(() => this.wave.updateUniforms());
-    twistFolder
-      .add(this.params, 'twistSpeed', 0, 2, 0.05)
-      .name('Twist Speed')
-      .onChange(() => this.wave.updateUniforms());
-    twistFolder
-      .add(this.params, 'twistStagger', 0, 20, 0.1)
-      .name('Twist Stagger')
-      .onChange(() => this.wave.updateUniforms());
-    twistFolder.open();
 
     const meshFolder = this.gui.addFolder('Mesh Dimensions');
     meshFolder
@@ -497,8 +440,6 @@ class App {
 
   animate() {
     this.statsFPS.begin();
-    this.statsMS.begin();
-    this.statsMB.begin();
 
     const elapsedTime = this.clock.getElapsedTime();
 
@@ -512,8 +453,6 @@ class App {
     this.composer.render();
 
     this.statsFPS.end();
-    this.statsMS.end();
-    this.statsMB.end();
 
     window.requestAnimationFrame(() => this.animate());
   }

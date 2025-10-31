@@ -1,7 +1,7 @@
 # Lausen Animation Project
 
 ## Overview
-An interactive Three.js visualization featuring animated wave meshes with particle networks. The project creates flowing, ribbon-like wave animations combined with dynamic particle networks that form connected graphs.
+An interactive Three.js visualization featuring simple line meshes with particle networks. The project displays gradient-colored horizontal lines combined with dynamic particle networks that form connected graphs.
 
 ## Technology Stack
 - **Three.js** (v0.180.0) - 3D graphics library
@@ -16,33 +16,27 @@ An interactive Three.js visualization featuring animated wave meshes with partic
 - **src/main.js** - Main application entry point
   - Initializes Three.js scene, camera, renderer
   - Contains `App` class (manages overall application)
-  - Contains `Wave` class (manages wave mesh and shader material)
   - Sets up GUI controls with lil-gui
   - Manages animation loop and updates
   - Configures post-processing effects
+- **src/wave.js** - Wave class that manages line mesh and shader material
 
 ### Core Components
 
-#### 1. Wave Animation System
+#### 1. Line Mesh System
 **Files:**
-- `src/waveShader.js` - Wave shader configuration
-- `src/shaders/waveVertex.glsl` - Vertex shader for wave mesh
-- `src/shaders/waveFragment.glsl` - Fragment shader for wave mesh
+- `src/wave.js` - Wave class that manages line mesh
+- `src/shaders/wave/vertex.glsl` - Vertex shader for line mesh
+- `src/shaders/wave/fragment.glsl` - Fragment shader for line mesh
 
 **Features:**
-- Flowing wave motion with sine-based calculations
-- Twist/rotation effect along the wave
-- Dynamic width variation (creates thinner/wider areas)
 - Multi-color gradient system (up to 7 color stops)
 - Configurable line rendering with anti-aliasing
 - All parameters controllable via GUI
 
-**Wave Parameters:**
+**Line Mesh Parameters:**
 - **Line Settings**: Line count, points per line, line width, opacity
-- **Wave Motion**: Amplitude, frequency, speed
-- **Twist Effect**: Twist amount, frequency, speed
 - **Mesh Dimensions**: Width and height
-- **Width Variation**: Variation strength, frequency, animation speed, pattern type
 - **Gradient Colors**: 7 configurable color stops with interpolation
 
 #### 2. Particle Network System
@@ -140,14 +134,11 @@ Main application controller.
 The GUI is organized into folders:
 
 1. **Settings Export/Import** - Download settings as JSON
-2. **Line Settings** - Wave line appearance
-3. **Wave Settings** - Wave motion parameters
-4. **Twist Settings** - Twist/rotation effects
-5. **Mesh Dimensions** - Width and height
-6. **Width Variation** - Dynamic width changes
-7. **Gradient Colors** - 7 color stops configuration
-8. **Edge Fade** - Viewport edge fade effect
-9. **Particle Network** - All particle system controls
+2. **Line Settings** - Line appearance (count, points per line, width, opacity)
+3. **Mesh Dimensions** - Width and height
+4. **Gradient Colors** - 7 color stops configuration
+5. **Edge Fade** - Viewport edge fade effect
+6. **Particle Network** - All particle system controls
 
 ## Performance Monitoring
 Three Stats.js panels display:
@@ -157,26 +148,11 @@ Three Stats.js panels display:
 
 ## Rendering Pipeline
 
-1. Scene renders wave mesh with custom shaders
+1. Scene renders line mesh with custom shaders
 2. Particle network updates and renders
 3. EffectComposer applies post-processing:
    - RenderPass (main scene render)
    - EdgeFadeShader (viewport edge fade)
-
-## Known Behaviors
-
-### Random Generation Issue
-- **Current Behavior**: Particle network positions change on every page refresh
-- **Reason**: Uses Math.random() without seeding
-- **Needed Solution**: Implement seeded random number generator with preset system
-
-## Future Enhancements Needed
-
-1. **Preset System for Particle Network**
-   - Add seeded random number generator
-   - Create named presets (e.g., "Preset 1", "Preset 2", "Preset 3")
-   - Add preset selector in GUI
-   - Ensure same preset generates identical network every time
 
 ## Development Commands
 
@@ -189,7 +165,7 @@ npm run preview  # Preview production build
 ## Key Technical Concepts
 
 ### GLSL Shaders
-- **Vertex Shader** - Transforms vertices, calculates wave motion, twist, width variation
+- **Vertex Shader** - Transforms vertices to create horizontal lines with gradient coloring
 - **Fragment Shader** - Renders lines with anti-aliasing, applies colors
 
 ### Three.js Components Used
@@ -202,22 +178,20 @@ npm run preview  # Preview production build
 - OrbitControls (camera control)
 
 ### Animation Techniques
-- **Sine Waves** - Smooth, periodic motion
-- **Time-based Animation** - Uses elapsed time for continuous animation
-- **Multi-frequency Combinations** - Layering multiple sine waves for complex motion
 - **Gradient Interpolation** - Smooth color transitions across X-axis
+- **Time-based Animation** - Uses elapsed time for particle network animation
 
 ## File Reference Quick Guide
 
 | File | Purpose |
 |------|---------|
-| `src/main.js` | Main app, Wave class, GUI setup |
+| `src/main.js` | Main app, App class, GUI setup |
+| `src/wave.js` | Wave class that manages line mesh |
 | `src/ParticleNetwork.js` | Particle network with graph connections |
-| `src/waveShader.js` | Wave shader uniforms |
-| `src/shaders/waveVertex.glsl` | Wave vertex transformations |
-| `src/shaders/waveFragment.glsl` | Wave line rendering |
+| `src/shaders/wave/vertex.glsl` | Line mesh vertex shader |
+| `src/shaders/wave/fragment.glsl` | Line mesh fragment shader |
 | `src/edgeFade.js` | Edge fade shader uniforms |
-| `src/shaders/edgeFadeVertex.glsl` | Edge fade vertex pass-through |
-| `src/shaders/edgeFadeFragment.glsl` | Edge fade effect |
+| `src/shaders/edgeFade/vertex.glsl` | Edge fade vertex pass-through |
+| `src/shaders/edgeFade/fragment.glsl` | Edge fade effect |
 | `index.html` | HTML entry point |
 | `package.json` | Dependencies and scripts |
