@@ -173,7 +173,7 @@ class App {
     // TAA (Temporal Anti-Aliasing) pass with 2 samples, no jitter
     this.taaPass = new TAARenderPass(this.scene, this.camera);
     this.taaPass.sampleLevel = 2; // Use 2 samples
-    this.taaPass.unbiased = false; // Disable jitter (no camera movement)
+    this.taaPass.unbiased = true; // Disable jitter (no camera movement)
     this.composer.addPass(this.taaPass);
 
     // Edge fade pass
