@@ -32,7 +32,7 @@ class App {
 
       twistAmount: 5,
       twistFrequency: 0.7,
-      twistSpeed: 0.15,
+      twistSpeed: 0.05,
       twistStagger: 0.2,
 
       meshWidth: 25,
@@ -57,7 +57,7 @@ class App {
       particleOpacity: 0.9,
       movementSpeed: 0.1,
       movementRange: 1.0,
-      particleSpreadWidth: 1.2, // Multiplier for particle spread (0.3-2.0)
+      particleSpreadWidth: 0.8, // Multiplier for particle spread (0.3-2.0)
       particleSpreadHeight: 1.0, // Multiplier for particle spread height (0.3-2.0)
       particleSpreadDepth: 5, // Z-axis spread depth
       particleScaleRange: 0.5, // Depth-based scale variation (0 = no variation, 1 = full variation)
