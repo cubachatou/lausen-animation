@@ -501,7 +501,7 @@ export class ParticleNetwork {
       transparent: true,
       opacity: this.params.opacity * 0.5,
       depthWrite: false,
-      alphaToCoverage: true,
+      alphaToCoverage: false, // Disabled for Firefox compatibility
       dashed: false,
       worldUnits: false,
     });
