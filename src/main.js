@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { GUI } from 'lil-gui';
 import Stats from 'stats.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { TAARenderPass } from 'three/examples/jsm/postprocessing/TAARenderPass.js';
 import { EdgeFadeShader } from './edgeFade.js';
 import { Wave } from './wave.js';
 import { ParticleNetwork } from './particleNetwork.js';
@@ -118,20 +118,6 @@ class App {
     this.statsFPS.dom.style.position = 'absolute';
     this.statsFPS.dom.style.left = '0px';
     this.statsFPS.dom.style.top = '0px';
-
-    this.statsMS = new Stats();
-    this.statsMS.showPanel(1);
-    document.body.appendChild(this.statsMS.dom);
-    this.statsMS.dom.style.position = 'absolute';
-    this.statsMS.dom.style.left = '0px';
-    this.statsMS.dom.style.top = '48px';
-
-    this.statsMB = new Stats();
-    this.statsMB.showPanel(2);
-    document.body.appendChild(this.statsMB.dom);
-    this.statsMB.dom.style.position = 'absolute';
-    this.statsMB.dom.style.left = '0px';
-    this.statsMB.dom.style.top = '96px';
   }
 
   setupCamera() {
@@ -164,11 +150,18 @@ class App {
 
   setupComposer() {
     this.composer = new EffectComposer(this.renderer);
-    const renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(renderPass);
+
+    // TAA (Temporal Anti-Aliasing) pass with 2 samples, no jitter
+    this.taaPass = new TAARenderPass(this.scene, this.camera);
+    this.taaPass.sampleLevel = 2; // Use 2 samples
+    this.taaPass.unbiased = false; // Disable jitter
+    this.composer.addPass(this.taaPass);
+
+    // Edge fade pass
     this.edgeFadePass = new ShaderPass(EdgeFadeShader);
     this.edgeFadePass.uniforms.backgroundColor.value = this.scene.background;
     this.composer.addPass(this.edgeFadePass);
+
     this.composer.setSize(this.sizes.width, this.sizes.height);
   }
 
@@ -497,8 +490,6 @@ class App {
 
   animate() {
     this.statsFPS.begin();
-    this.statsMS.begin();
-    this.statsMB.begin();
 
     const elapsedTime = this.clock.getElapsedTime();
 
@@ -512,8 +503,6 @@ class App {
     this.composer.render();
 
     this.statsFPS.end();
-    this.statsMS.end();
-    this.statsMB.end();
 
     window.requestAnimationFrame(() => this.animate());
   }
