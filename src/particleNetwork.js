@@ -64,7 +64,7 @@ export class ParticleNetwork {
     const d12sq = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
     const d23sq = (p3.x - p2.x) ** 2 + (p3.y - p2.y) ** 2;
     const d31sq = (p1.x - p3.x) ** 2 + (p1.y - p3.y) ** 2;
-    
+
     // Calculate perimeter from squared distances
     const perimeter = Math.sqrt(d12sq) + Math.sqrt(d23sq) + Math.sqrt(d31sq);
 
@@ -118,7 +118,7 @@ export class ParticleNetwork {
     // Generate points
     const maxAttempts = 30;
     const minDistSq = minDistance * minDistance; // Cache squared distance
-    
+
     while (activeList.length > 0 && positions.length < count) {
       const randomIndex = Math.floor(this.rng() * activeList.length);
       const point = activeList[randomIndex];
@@ -174,7 +174,7 @@ export class ParticleNetwork {
           if (positions.length >= 2) {
             // Cache squared distance threshold for nearby check
             const nearbyDistSq = (minDistance * 3) ** 2;
-            
+
             // Check if this new point is collinear with any pair of existing nearby points
             const nearbyPositions = positions.filter(p => {
               const dx = newPoint.x - p.x;
@@ -568,11 +568,12 @@ export class ParticleNetwork {
     this.particleMesh.geometry.attributes.instanceScale.needsUpdate = true;
 
     // Update line positions - reuse array from geometry if possible
-    const linePositions = this.lineMesh.geometry.getAttribute('instanceStart')?.array || new Float32Array(this.connections.length * 6);
+    const linePositions =
+      this.lineMesh.geometry.getAttribute('instanceStart')?.array || new Float32Array(this.connections.length * 6);
     let idx = 0;
     const connectionCount = this.connections.length;
     const particles = this.particles;
-    
+
     for (let i = 0; i < connectionCount; i++) {
       const [idA, idB] = this.connections[i];
       const posA = particles[idA].position;
@@ -659,7 +660,7 @@ export class ParticleNetwork {
       }
       this.particleMesh = null;
     }
-    
+
     if (this.lineMesh) {
       this.group.remove(this.lineMesh);
       if (this.lineMesh.geometry) {
@@ -716,7 +717,7 @@ export class ParticleNetwork {
       }
       this.particleMesh = null;
     }
-    
+
     if (this.lineMesh) {
       this.group.remove(this.lineMesh);
       if (this.lineMesh.geometry) {
@@ -727,7 +728,7 @@ export class ParticleNetwork {
       }
       this.lineMesh = null;
     }
-    
+
     // Clear group and arrays
     this.group.clear();
     this.particles = [];

@@ -67,7 +67,7 @@ class App {
 
     // Cache active colors to avoid repeated creation
     this.cachedActiveColors = null;
-    
+
     // Helper to get active colors as THREE.Color array
     this.getActiveColors = () => {
       if (!this.cachedActiveColors) {
@@ -85,7 +85,7 @@ class App {
     };
 
     // Helper to update a single color in the cache
-    this.updateCachedColor = (index) => {
+    this.updateCachedColor = index => {
       if (this.cachedActiveColors) {
         this.cachedActiveColors[index].set(this.params[`color${index + 1}`]);
       }
@@ -298,7 +298,7 @@ class App {
           colorStops: this.params.colorStops,
         });
       });
-    
+
     // Create color controllers using a loop to reduce redundancy
     for (let i = 1; i <= 7; i++) {
       colorFolder
@@ -475,7 +475,7 @@ class App {
         this.particleNetwork.updateResolution(this.sizes.width, this.sizes.height);
       }
     };
-    
+
     window.addEventListener('resize', this.handleResize);
   }
 
