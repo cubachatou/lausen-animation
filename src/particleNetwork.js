@@ -56,15 +56,17 @@ export class ParticleNetwork {
    * Check if three points are nearly collinear (form a nearly straight line)
    */
   isNearlyCollinear(p1, p2, p3, threshold = 0.15) {
-    // Calculate the area of triangle formed by three points
+    // Calculate the area of triangle formed by three points using determinant formula
     // If area is very small, points are nearly collinear
     const area = Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)) / 2;
 
-    // Calculate the perimeter
-    const d12 = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-    const d23 = Math.sqrt(Math.pow(p3.x - p2.x, 2) + Math.pow(p3.y - p2.y, 2));
-    const d31 = Math.sqrt(Math.pow(p1.x - p3.x, 2) + Math.pow(p1.y - p3.y, 2));
-    const perimeter = d12 + d23 + d31;
+    // Calculate squared distances to avoid sqrt
+    const d12sq = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+    const d23sq = (p3.x - p2.x) ** 2 + (p3.y - p2.y) ** 2;
+    const d31sq = (p1.x - p3.x) ** 2 + (p1.y - p3.y) ** 2;
+    
+    // Calculate perimeter from squared distances
+    const perimeter = Math.sqrt(d12sq) + Math.sqrt(d23sq) + Math.sqrt(d31sq);
 
     // If area/perimeter ratio is very small, points are collinear
     return area / perimeter < threshold;
@@ -115,6 +117,8 @@ export class ParticleNetwork {
 
     // Generate points
     const maxAttempts = 30;
+    const minDistSq = minDistance * minDistance; // Cache squared distance
+    
     while (activeList.length > 0 && positions.length < count) {
       const randomIndex = Math.floor(this.rng() * activeList.length);
       const point = activeList[randomIndex];
@@ -151,8 +155,11 @@ export class ParticleNetwork {
             const checkIdx = checkY * gridWidth + checkX;
             const neighbor = grid[checkIdx];
             if (neighbor) {
-              const dist = Math.sqrt(Math.pow(newPoint.x - neighbor.x, 2) + Math.pow(newPoint.y - neighbor.y, 2));
-              if (dist < minDistance) {
+              // Use squared distance to avoid sqrt
+              const dx2 = newPoint.x - neighbor.x;
+              const dy2 = newPoint.y - neighbor.y;
+              const distSq = dx2 * dx2 + dy2 * dy2;
+              if (distSq < minDistSq) {
                 valid = false;
                 break;
               }
@@ -165,10 +172,14 @@ export class ParticleNetwork {
           // Additional check: avoid creating collinear points with nearby positions
           let isCollinear = false;
           if (positions.length >= 2) {
+            // Cache squared distance threshold for nearby check
+            const nearbyDistSq = (minDistance * 3) ** 2;
+            
             // Check if this new point is collinear with any pair of existing nearby points
             const nearbyPositions = positions.filter(p => {
-              const dist = Math.sqrt(Math.pow(newPoint.x - p.x, 2) + Math.pow(newPoint.y - p.y, 2));
-              return dist < minDistance * 3;
+              const dx = newPoint.x - p.x;
+              const dy = newPoint.y - p.y;
+              return dx * dx + dy * dy < nearbyDistSq;
             });
 
             for (let i = 0; i < nearbyPositions.length - 1; i++) {
@@ -260,16 +271,19 @@ export class ParticleNetwork {
     const connected = new Set([0]); // Start with first particle
     const unconnected = new Set(this.particles.slice(1).map(p => p.id));
 
+    // Cache distance squared threshold
+    const maxDistSq = this.params.maxConnectionDistance * this.params.maxConnectionDistance;
+
     // Prim's algorithm for MST - ensures connectivity
     while (unconnected.size > 0) {
-      let minDist = Infinity;
+      let minDistSq = Infinity;
       let closestPair = null;
 
       for (const connectedId of connected) {
         for (const unconnectedId of unconnected) {
-          const dist = this.particles[connectedId].position.distanceTo(this.particles[unconnectedId].position);
-          if (dist < minDist) {
-            minDist = dist;
+          const distSq = this.particles[connectedId].position.distanceToSquared(this.particles[unconnectedId].position);
+          if (distSq < minDistSq) {
+            minDistSq = distSq;
             closestPair = [connectedId, unconnectedId];
           }
         }
@@ -292,10 +306,10 @@ export class ParticleNetwork {
 
         // Only add if not already connected
         if (!particleA.connections.includes(j)) {
-          const dist = particleA.position.distanceTo(particleB.position);
+          const distSq = particleA.position.distanceToSquared(particleB.position);
 
           // Connect if within reach distance
-          if (dist <= this.params.maxConnectionDistance) {
+          if (distSq <= maxDistSq) {
             this.addConnection(i, j);
           }
         }
@@ -320,9 +334,9 @@ export class ParticleNetwork {
 
           // Find ALL neighbors sorted by distance (no distance limit)
           const neighbors = this.particles
-            .map((p, idx) => ({ id: idx, dist: p.position.distanceTo(particle.position) }))
+            .map((p, idx) => ({ id: idx, distSq: p.position.distanceToSquared(particle.position) }))
             .filter(n => n.id !== i && !particle.connections.includes(n.id))
-            .sort((a, b) => a.dist - b.dist);
+            .sort((a, b) => a.distSq - b.distSq);
 
           const needed = minConnections - particle.connections.length;
 
@@ -413,6 +427,7 @@ export class ParticleNetwork {
       fragmentShader: fragmentShader,
       transparent: true,
       depthWrite: false,
+      toneMapped: true, // Better TAA compatibility
     });
 
     this.particleMesh = new THREE.InstancedMesh(geometry, material, this.params.particleCount);
@@ -513,26 +528,37 @@ export class ParticleNetwork {
     const matrix = new THREE.Matrix4();
     const scales = this.particleMesh.geometry.attributes.instanceScale.array;
 
+    // Cache parameters to reduce property access
+    const movementSpeed = this.params.movementSpeed;
+    const movementRange = this.params.movementRange;
+    const scaleRange = this.params.scaleRange;
+    const particleCount = this.params.particleCount;
+
     // Calculate Z bounds for scale calculation
-    const minZ = this.params.zPosition - this.params.boundsZ / 2 - this.params.movementRange * 0.3;
-    const maxZ = this.params.zPosition + this.params.boundsZ / 2 + this.params.movementRange * 0.3;
+    const movementRangeZ = movementRange * 0.3;
+    const minZ = this.params.zPosition - this.params.boundsZ / 2 - movementRangeZ;
+    const maxZ = this.params.zPosition + this.params.boundsZ / 2 + movementRangeZ;
+    const zRange = maxZ - minZ || 1;
+    const scaleBase = 1.0 - scaleRange;
+    const scaleMultiplier = scaleRange * 2;
 
     // Update particle positions using sine waves for smooth, continuous movement
-    for (let i = 0; i < this.params.particleCount; i++) {
+    for (let i = 0; i < particleCount; i++) {
       const particle = this.particles[i];
+      const startPos = particle.startPosition;
 
       // Calculate new position using sine waves
-      const timeX = elapsedTime * this.params.movementSpeed * particle.speedMultX + particle.offsetX;
-      const timeY = elapsedTime * this.params.movementSpeed * particle.speedMultY + particle.offsetY;
-      const timeZ = elapsedTime * this.params.movementSpeed * particle.speedMultZ + particle.offsetZ;
+      const timeX = elapsedTime * movementSpeed * particle.speedMultX + particle.offsetX;
+      const timeY = elapsedTime * movementSpeed * particle.speedMultY + particle.offsetY;
+      const timeZ = elapsedTime * movementSpeed * particle.speedMultZ + particle.offsetZ;
 
-      particle.position.x = particle.startPosition.x + Math.sin(timeX) * this.params.movementRange;
-      particle.position.y = particle.startPosition.y + Math.sin(timeY) * this.params.movementRange;
-      particle.position.z = particle.startPosition.z + Math.sin(timeZ) * this.params.movementRange * 0.3;
+      particle.position.x = startPos.x + Math.sin(timeX) * movementRange;
+      particle.position.y = startPos.y + Math.sin(timeY) * movementRange;
+      particle.position.z = startPos.z + Math.sin(timeZ) * movementRangeZ;
 
       // Update scale based on Z position (closer to camera = larger)
-      const normalizedZ = (particle.position.z - minZ) / (maxZ - minZ || 1);
-      scales[i] = 1.0 - this.params.scaleRange + normalizedZ * this.params.scaleRange * 2;
+      const normalizedZ = (particle.position.z - minZ) / zRange;
+      scales[i] = scaleBase + normalizedZ * scaleMultiplier;
 
       // Update instance matrix
       matrix.setPosition(particle.position);
@@ -541,17 +567,25 @@ export class ParticleNetwork {
     this.particleMesh.instanceMatrix.needsUpdate = true;
     this.particleMesh.geometry.attributes.instanceScale.needsUpdate = true;
 
-    // Update line positions
-    const positions = [];
-    for (let i = 0; i < this.connections.length; i++) {
+    // Update line positions - reuse array from geometry if possible
+    const linePositions = this.lineMesh.geometry.getAttribute('instanceStart')?.array || new Float32Array(this.connections.length * 6);
+    let idx = 0;
+    const connectionCount = this.connections.length;
+    const particles = this.particles;
+    
+    for (let i = 0; i < connectionCount; i++) {
       const [idA, idB] = this.connections[i];
-      const posA = this.particles[idA].position;
-      const posB = this.particles[idB].position;
+      const posA = particles[idA].position;
+      const posB = particles[idB].position;
 
-      positions.push(posA.x, posA.y, posA.z);
-      positions.push(posB.x, posB.y, posB.z);
+      linePositions[idx++] = posA.x;
+      linePositions[idx++] = posA.y;
+      linePositions[idx++] = posA.z;
+      linePositions[idx++] = posB.x;
+      linePositions[idx++] = posB.y;
+      linePositions[idx++] = posB.z;
     }
-    this.lineMesh.geometry.setPositions(positions);
+    this.lineMesh.geometry.setPositions(linePositions);
   }
 
   /**
@@ -614,17 +648,27 @@ export class ParticleNetwork {
    * Recreate the network with new particle count or connection settings
    */
   recreate() {
-    // Clear existing meshes
-    this.group.remove(this.particleMesh);
-    this.group.remove(this.lineMesh);
-
+    // Clear existing meshes and properly dispose
     if (this.particleMesh) {
-      this.particleMesh.geometry.dispose();
-      this.particleMesh.material.dispose();
+      this.group.remove(this.particleMesh);
+      if (this.particleMesh.geometry) {
+        this.particleMesh.geometry.dispose();
+      }
+      if (this.particleMesh.material) {
+        this.particleMesh.material.dispose();
+      }
+      this.particleMesh = null;
     }
+    
     if (this.lineMesh) {
-      this.lineMesh.geometry.dispose();
-      this.lineMesh.material.dispose();
+      this.group.remove(this.lineMesh);
+      if (this.lineMesh.geometry) {
+        this.lineMesh.geometry.dispose();
+      }
+      if (this.lineMesh.material) {
+        this.lineMesh.material.dispose();
+      }
+      this.lineMesh = null;
     }
 
     // Reset data
@@ -661,14 +705,32 @@ export class ParticleNetwork {
    * Dispose of all resources
    */
   dispose() {
+    // Remove meshes from group first
     if (this.particleMesh) {
-      this.particleMesh.geometry.dispose();
-      this.particleMesh.material.dispose();
+      this.group.remove(this.particleMesh);
+      if (this.particleMesh.geometry) {
+        this.particleMesh.geometry.dispose();
+      }
+      if (this.particleMesh.material) {
+        this.particleMesh.material.dispose();
+      }
+      this.particleMesh = null;
     }
+    
     if (this.lineMesh) {
-      this.lineMesh.geometry.dispose();
-      this.lineMesh.material.dispose();
+      this.group.remove(this.lineMesh);
+      if (this.lineMesh.geometry) {
+        this.lineMesh.geometry.dispose();
+      }
+      if (this.lineMesh.material) {
+        this.lineMesh.material.dispose();
+      }
+      this.lineMesh = null;
     }
+    
+    // Clear group and arrays
     this.group.clear();
+    this.particles = [];
+    this.connections = [];
   }
 }

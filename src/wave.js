@@ -8,25 +8,25 @@ export class Wave {
     this.params = params;
     this.material = null;
     this.mesh = null;
+    this.cachedColors = null;
     this.createMesh();
   }
 
   createMesh() {
+    // Properly dispose of old resources
     if (this.mesh) {
-      this.mesh.geometry.dispose();
-      this.mesh.material.dispose();
+      if (this.mesh.geometry) {
+        this.mesh.geometry.dispose();
+      }
+      if (this.mesh.material) {
+        this.mesh.material.dispose();
+      }
       // Note: scene.remove is handled by the caller
     }
 
-    const activeColors = [
-      this.params.color1,
-      this.params.color2,
-      this.params.color3,
-      this.params.color4,
-      this.params.color5,
-      this.params.color6,
-      this.params.color7,
-    ].map(color => new THREE.Color(color));
+    // Create and cache color array
+    this.cachedColors = this.createColorArray();
+    const activeColors = this.cachedColors;
 
     const geometry = new THREE.PlaneGeometry(1, 1, this.params.pointsPerLine - 1, this.params.lineCount - 1);
 
@@ -52,7 +52,7 @@ export class Wave {
       },
       transparent: true,
       depthWrite: false,
-      toneMapped: false,
+      toneMapped: true, // Enable tone mapping for better TAA compatibility
       side: THREE.DoubleSide,
     });
 
@@ -77,8 +77,8 @@ export class Wave {
     this.material.uniforms.uColorStops.value = this.params.colorStops;
   }
 
-  updateColors() {
-    const activeColors = [
+  createColorArray() {
+    return [
       this.params.color1,
       this.params.color2,
       this.params.color3,
@@ -87,10 +87,35 @@ export class Wave {
       this.params.color6,
       this.params.color7,
     ].map(color => new THREE.Color(color));
-    this.material.uniforms.uColors.value = activeColors;
+  }
+
+  updateColors() {
+    this.cachedColors = this.createColorArray();
+    this.material.uniforms.uColors.value = this.cachedColors;
   }
 
   updateSingleColor(index) {
-    this.material.uniforms.uColors.value[index] = new THREE.Color(this.params[`color${index + 1}`]);
+    if (!this.cachedColors) {
+      this.cachedColors = this.createColorArray();
+    }
+    this.cachedColors[index].set(this.params[`color${index + 1}`]);
+    this.material.uniforms.uColors.value = this.cachedColors;
+  }
+
+  /**
+   * Dispose of all resources to prevent memory leaks
+   */
+  dispose() {
+    if (this.mesh) {
+      if (this.mesh.geometry) {
+        this.mesh.geometry.dispose();
+      }
+      if (this.mesh.material) {
+        this.mesh.material.dispose();
+      }
+    }
+    this.material = null;
+    this.mesh = null;
+    this.cachedColors = null;
   }
 }

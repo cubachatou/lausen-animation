@@ -65,17 +65,35 @@ class App {
       particleSeed: 42857, // Seed for random generation
     };
 
+    // Cache active colors to avoid repeated creation
+    this.cachedActiveColors = null;
+    
     // Helper to get active colors as THREE.Color array
     this.getActiveColors = () => {
-      return [
-        this.params.color1,
-        this.params.color2,
-        this.params.color3,
-        this.params.color4,
-        this.params.color5,
-        this.params.color6,
-        this.params.color7,
-      ].map(color => new THREE.Color(color));
+      if (!this.cachedActiveColors) {
+        this.cachedActiveColors = [
+          new THREE.Color(this.params.color1),
+          new THREE.Color(this.params.color2),
+          new THREE.Color(this.params.color3),
+          new THREE.Color(this.params.color4),
+          new THREE.Color(this.params.color5),
+          new THREE.Color(this.params.color6),
+          new THREE.Color(this.params.color7),
+        ];
+      }
+      return this.cachedActiveColors;
+    };
+
+    // Helper to update a single color in the cache
+    this.updateCachedColor = (index) => {
+      if (this.cachedActiveColors) {
+        this.cachedActiveColors[index].set(this.params[`color${index + 1}`]);
+      }
+    };
+
+    // Helper to invalidate color cache
+    this.invalidateColorCache = () => {
+      this.cachedActiveColors = null;
     };
 
     this.wave = new Wave(this.params);
@@ -139,9 +157,10 @@ class App {
   setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: false, // TAA handles antialiasing
       alpha: true,
       powerPreference: 'high-performance',
+      stencil: false, // Disable stencil buffer if not needed
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setSize(this.sizes.width, this.sizes.height);
@@ -154,15 +173,17 @@ class App {
     // TAA (Temporal Anti-Aliasing) pass with 2 samples, no jitter
     this.taaPass = new TAARenderPass(this.scene, this.camera);
     this.taaPass.sampleLevel = 2; // Use 2 samples
-    this.taaPass.unbiased = false; // Disable jitter
+    this.taaPass.unbiased = false; // Disable jitter (no camera movement)
     this.composer.addPass(this.taaPass);
 
     // Edge fade pass
     this.edgeFadePass = new ShaderPass(EdgeFadeShader);
     this.edgeFadePass.uniforms.backgroundColor.value = this.scene.background;
+    this.edgeFadePass.renderToScreen = true; // Final pass renders to screen
     this.composer.addPass(this.edgeFadePass);
 
     this.composer.setSize(this.sizes.width, this.sizes.height);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
 
   setupGUI() {
@@ -180,7 +201,8 @@ class App {
             a.href = url;
             a.download = 'wave-settings.json';
             a.click();
-            URL.revokeObjectURL(url);
+            // Revoke the URL immediately after use to prevent memory leak
+            setTimeout(() => URL.revokeObjectURL(url), 100);
           },
         },
         'exportJSON'
@@ -193,16 +215,18 @@ class App {
       .add(this.params, 'lineCount', 20, 200, 1)
       .name('Line Count')
       .onChange(() => {
-        this.scene.remove(this.wave.mesh);
+        const oldMesh = this.wave.mesh;
         this.wave.createMesh();
+        this.scene.remove(oldMesh);
         this.scene.add(this.wave.mesh);
       });
     lineFolder
       .add(this.params, 'pointsPerLine', 5, 500, 1)
       .name('Points Per Line')
       .onChange(() => {
-        this.scene.remove(this.wave.mesh);
+        const oldMesh = this.wave.mesh;
         this.wave.createMesh();
+        this.scene.remove(oldMesh);
         this.scene.add(this.wave.mesh);
       });
     lineFolder
@@ -267,61 +291,25 @@ class App {
       .onChange(() => {
         this.wave.updateUniforms();
         this.wave.updateColors();
+        this.invalidateColorCache();
         // Update particle network colors
         this.particleNetwork.updateParams({
           colors: this.getActiveColors(),
           colorStops: this.params.colorStops,
         });
       });
-    colorFolder
-      .addColor(this.params, 'color1')
-      .name('Color 1')
-      .onChange(() => {
-        this.wave.updateSingleColor(0);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color2')
-      .name('Color 2')
-      .onChange(() => {
-        this.wave.updateSingleColor(1);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color3')
-      .name('Color 3')
-      .onChange(() => {
-        this.wave.updateSingleColor(2);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color4')
-      .name('Color 4')
-      .onChange(() => {
-        this.wave.updateSingleColor(3);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color5')
-      .name('Color 5')
-      .onChange(() => {
-        this.wave.updateSingleColor(4);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color6')
-      .name('Color 6')
-      .onChange(() => {
-        this.wave.updateSingleColor(5);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
-    colorFolder
-      .addColor(this.params, 'color7')
-      .name('Color 7')
-      .onChange(() => {
-        this.wave.updateSingleColor(6);
-        this.particleNetwork.updateParams({ colors: this.getActiveColors() });
-      });
+    
+    // Create color controllers using a loop to reduce redundancy
+    for (let i = 1; i <= 7; i++) {
+      colorFolder
+        .addColor(this.params, `color${i}`)
+        .name(`Color ${i}`)
+        .onChange(() => {
+          this.updateCachedColor(i - 1);
+          this.wave.updateSingleColor(i - 1);
+          this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+        });
+    }
     colorFolder.open();
 
     const fadeFolder = this.gui.addFolder('Edge Fade');
@@ -464,7 +452,8 @@ class App {
   }
 
   setupEventListeners() {
-    window.addEventListener('resize', () => {
+    // Store resize handler to allow removal later
+    this.handleResize = () => {
       this.sizes.width = window.innerWidth;
       this.sizes.height = window.innerHeight;
 
@@ -485,7 +474,9 @@ class App {
       if (this.particleNetwork) {
         this.particleNetwork.updateResolution(this.sizes.width, this.sizes.height);
       }
-    });
+    };
+    
+    window.addEventListener('resize', this.handleResize);
   }
 
   animate() {
@@ -493,18 +484,75 @@ class App {
 
     const elapsedTime = this.clock.getElapsedTime();
 
-    if (this.wave.material) this.wave.material.uniforms.uTime.value = elapsedTime;
+    // Update shader time uniform
+    if (this.wave.material) {
+      this.wave.material.uniforms.uTime.value = elapsedTime;
+    }
 
     // Update particle network
     if (this.particleNetwork) {
       this.particleNetwork.update(elapsedTime);
     }
 
+    // Render with TAA
     this.composer.render();
 
     this.statsFPS.end();
 
-    window.requestAnimationFrame(() => this.animate());
+    this.animationFrameId = window.requestAnimationFrame(() => this.animate());
+  }
+
+  /**
+   * Cleanup method to dispose of all resources and prevent memory leaks
+   */
+  dispose() {
+    // Cancel animation loop
+    if (this.animationFrameId) {
+      window.cancelAnimationFrame(this.animationFrameId);
+    }
+
+    // Remove event listeners
+    if (this.handleResize) {
+      window.removeEventListener('resize', this.handleResize);
+    }
+
+    // Dispose GUI
+    if (this.gui) {
+      this.gui.destroy();
+    }
+
+    // Remove stats
+    if (this.statsFPS && this.statsFPS.dom && this.statsFPS.dom.parentElement) {
+      this.statsFPS.dom.parentElement.removeChild(this.statsFPS.dom);
+    }
+
+    // Dispose wave
+    if (this.wave) {
+      this.wave.dispose();
+    }
+
+    // Dispose particle network
+    if (this.particleNetwork) {
+      this.particleNetwork.dispose();
+    }
+
+    // Dispose composer and passes
+    if (this.composer) {
+      this.composer.dispose();
+    }
+
+    // Dispose renderer
+    if (this.renderer) {
+      this.renderer.dispose();
+    }
+
+    // Clear scene
+    if (this.scene) {
+      this.scene.clear();
+    }
+
+    // Clear cached colors
+    this.cachedActiveColors = null;
   }
 }
 
