@@ -8,6 +8,8 @@ export const EdgeFadeShader = {
     tDiffuse: { value: null },
     fadeWidth: { value: 0.15 },
     fadeStrength: { value: 1.0 },
+    fadeWidthY: { value: 0.15 },
+    fadeStrengthY: { value: 0.0 }, // Disabled by default
     backgroundColor: { value: new THREE.Color(0xffffff) },
   },
 

@@ -8,6 +8,7 @@ import { TAARenderPass } from 'three/examples/jsm/postprocessing/TAARenderPass.j
 import { EdgeFadeShader } from './edgeFade.js';
 import { Wave } from './wave.js';
 import { ParticleNetwork } from './particleNetwork.js';
+import { SpectrumBars } from './spectrumBars.js';
 
 class App {
   constructor() {
@@ -21,6 +22,11 @@ class App {
     };
 
     this.params = {
+      // Visibility controls
+      waveVisible: true,
+      particleNetworkVisible: true,
+      spectrumBarsVisible: true,
+
       lineCount: 60,
       pointsPerLine: 7,
       lineWidth: 0.3,
@@ -48,7 +54,9 @@ class App {
       colorStops: 7,
 
       fadeWidth: 0.2,
-      fadeStrength: 1.0,
+      fadeStrength: 1,
+      fadeWidthY: 0.2,
+      fadeStrengthY: 0, // Disabled by default
 
       // Particle Network params
       particleCount: 50,
@@ -63,6 +71,18 @@ class App {
       particleScaleRange: 0.5, // Depth-based scale variation (0 = no variation, 1 = full variation)
       maxConnectionDistance: 2.0,
       particleSeed: 42857, // Seed for random generation
+
+      // Spectrum Bars params
+      spectrumBarCount: 120,
+      spectrumBarGap: 0.0,
+      spectrumBaseHeight: 1,
+      spectrumMaxHeight: 5,
+      spectrumSpeed: 0.5,
+      spectrumSmoothness: 0.3,
+      spectrumOpacity: 0.95,
+      spectrumFadeStart: 0.5,
+      spectrumFadeEnd: 0.2,
+      spectrumPositionY: -3,
     };
 
     // Cache active colors to avoid repeated creation
@@ -97,6 +117,7 @@ class App {
     };
 
     this.wave = new Wave(this.params);
+    this.wave.mesh.visible = this.params.waveVisible;
     this.scene.add(this.wave.mesh);
 
     // Initialize particle network
@@ -116,7 +137,28 @@ class App {
       maxConnectionDistance: this.params.maxConnectionDistance,
       seed: this.params.particleSeed,
     });
+    this.particleNetwork.getGroup().visible = this.params.particleNetworkVisible;
     this.scene.add(this.particleNetwork.getGroup());
+
+    // Initialize spectrum bars
+    this.spectrumBars = new SpectrumBars({
+      barCount: this.params.spectrumBarCount,
+      barGap: this.params.spectrumBarGap,
+      totalWidth: this.params.meshWidth,
+      colors: this.getActiveColors(),
+      colorStops: this.params.colorStops,
+      baseHeight: this.params.spectrumBaseHeight,
+      maxHeight: this.params.spectrumMaxHeight,
+      speed: this.params.spectrumSpeed,
+      smoothness: this.params.spectrumSmoothness,
+      opacity: this.params.spectrumOpacity,
+      fadeStart: this.params.spectrumFadeStart,
+      fadeEnd: this.params.spectrumFadeEnd,
+    });
+    this.spectrumBars.mesh.position.y = this.params.spectrumPositionY;
+    this.spectrumBars.mesh.position.z = -10; // Position far behind particle network
+    this.spectrumBars.mesh.visible = this.params.spectrumBarsVisible;
+    this.scene.add(this.spectrumBars.mesh);
 
     this.setupStats();
     this.setupCamera();
@@ -189,6 +231,28 @@ class App {
   setupGUI() {
     this.gui = new GUI();
 
+    // Visibility Controls - Open by default
+    const visibilityFolder = this.gui.addFolder('👁️ Visibility');
+    visibilityFolder
+      .add(this.params, 'waveVisible')
+      .name('Wave')
+      .onChange(visible => {
+        this.wave.mesh.visible = visible;
+      });
+    visibilityFolder
+      .add(this.params, 'particleNetworkVisible')
+      .name('Particle Network')
+      .onChange(visible => {
+        this.particleNetwork.getGroup().visible = visible;
+      });
+    visibilityFolder
+      .add(this.params, 'spectrumBarsVisible')
+      .name('Spectrum Bars')
+      .onChange(visible => {
+        this.spectrumBars.mesh.visible = visible;
+      });
+    visibilityFolder.open();
+
     const settingsFolder = this.gui.addFolder('Settings Export/Import');
     settingsFolder
       .add(
@@ -208,7 +272,7 @@ class App {
         'exportJSON'
       )
       .name('💾 Download Settings JSON');
-    settingsFolder.open();
+    settingsFolder.close();
 
     const lineFolder = this.gui.addFolder('Line Settings');
     lineFolder
@@ -237,7 +301,7 @@ class App {
       .add(this.params, 'opacity', 0.1, 1, 0.05)
       .name('Opacity')
       .onChange(() => this.wave.updateUniforms());
-    lineFolder.open();
+    lineFolder.close();
 
     const waveFolder = this.gui.addFolder('Wave Settings');
     waveFolder
@@ -252,7 +316,7 @@ class App {
       .add(this.params, 'waveSpeed', 0, 2, 0.05)
       .name('Wave Speed')
       .onChange(() => this.wave.updateUniforms());
-    waveFolder.open();
+    waveFolder.close();
 
     const twistFolder = this.gui.addFolder('Twist Settings');
     twistFolder
@@ -271,18 +335,25 @@ class App {
       .add(this.params, 'twistStagger', 0, 20, 0.1)
       .name('Twist Stagger')
       .onChange(() => this.wave.updateUniforms());
-    twistFolder.open();
+    twistFolder.close();
 
     const meshFolder = this.gui.addFolder('Mesh Dimensions');
     meshFolder
       .add(this.params, 'meshWidth', 5, 30, 0.5)
       .name('Mesh Width')
-      .onChange(() => this.wave.updateUniforms());
+      .onChange(() => {
+        this.wave.updateUniforms();
+        // Update spectrum bars totalWidth and recreate
+        this.spectrumBars.setParams({ totalWidth: this.params.meshWidth });
+        const oldMesh = this.spectrumBars.recreateMesh();
+        this.scene.remove(oldMesh);
+        this.scene.add(this.spectrumBars.mesh);
+      });
     meshFolder
       .add(this.params, 'meshHeight', 0.5, 10, 0.1)
       .name('Mesh Height')
       .onChange(() => this.wave.updateUniforms());
-    meshFolder.open();
+    meshFolder.close();
 
     const colorFolder = this.gui.addFolder('Gradient Colors');
     colorFolder
@@ -297,6 +368,11 @@ class App {
           colors: this.getActiveColors(),
           colorStops: this.params.colorStops,
         });
+        // Update spectrum bars colors
+        this.spectrumBars.setParams({
+          colors: this.getActiveColors(),
+          colorStops: this.params.colorStops,
+        });
       });
 
     // Create color controllers using a loop to reduce redundancy
@@ -308,24 +384,37 @@ class App {
           this.updateCachedColor(i - 1);
           this.wave.updateSingleColor(i - 1);
           this.particleNetwork.updateParams({ colors: this.getActiveColors() });
+          this.spectrumBars.setParams({ colors: this.getActiveColors() });
         });
     }
-    colorFolder.open();
+    colorFolder.close();
 
     const fadeFolder = this.gui.addFolder('Edge Fade');
     fadeFolder
       .add(this.params, 'fadeWidth', 0, 0.5, 0.01)
-      .name('Fade Width')
+      .name('Fade Width (X)')
       .onChange(() => {
         this.edgeFadePass.uniforms.fadeWidth.value = this.params.fadeWidth;
       });
     fadeFolder
       .add(this.params, 'fadeStrength', 0, 1, 0.05)
-      .name('Fade Strength')
+      .name('Fade Strength (X)')
       .onChange(() => {
         this.edgeFadePass.uniforms.fadeStrength.value = this.params.fadeStrength;
       });
-    fadeFolder.open();
+    fadeFolder
+      .add(this.params, 'fadeWidthY', 0, 0.5, 0.01)
+      .name('Fade Width (Y)')
+      .onChange(() => {
+        this.edgeFadePass.uniforms.fadeWidthY.value = this.params.fadeWidthY;
+      });
+    fadeFolder
+      .add(this.params, 'fadeStrengthY', 0, 1, 0.05)
+      .name('Fade Strength (Y)')
+      .onChange(() => {
+        this.edgeFadePass.uniforms.fadeStrengthY.value = this.params.fadeStrengthY;
+      });
+    fadeFolder.close();
 
     // Particle Network Controls
     const particleFolder = this.gui.addFolder('Particle Network');
@@ -448,7 +537,77 @@ class App {
         this.particleNetwork.params.colorStops = this.params.colorStops;
         this.particleNetwork.recreate();
       });
-    particleFolder.open();
+    particleFolder.close();
+
+    // Spectrum Bars Controls
+    const spectrumFolder = this.gui.addFolder('Spectrum Bars');
+    spectrumFolder
+      .add(this.params, 'spectrumBarCount', 10, 200, 1)
+      .name('Bar Count')
+      .onChange(value => {
+        this.spectrumBars.setParams({ barCount: value });
+        const oldMesh = this.spectrumBars.recreateMesh();
+        this.scene.remove(oldMesh);
+        this.scene.add(this.spectrumBars.mesh);
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumBarGap', 0.0, 1.0, 0.01)
+      .name('Bar Gap')
+      .onChange(value => {
+        this.spectrumBars.setParams({ barGap: value });
+        const oldMesh = this.spectrumBars.recreateMesh();
+        this.scene.remove(oldMesh);
+        this.scene.add(this.spectrumBars.mesh);
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumPositionY', -10, 10, 0.1)
+      .name('Position Y')
+      .onChange(value => {
+        this.spectrumBars.mesh.position.y = value;
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumBaseHeight', 0, 2.0, 0.1)
+      .name('Base Height')
+      .onChange(value => {
+        this.spectrumBars.setParams({ baseHeight: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumMaxHeight', 1.0, 10.0, 0.1)
+      .name('Max Height')
+      .onChange(value => {
+        this.spectrumBars.setParams({ maxHeight: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumSpeed', 0.1, 5.0, 0.01)
+      .name('Speed')
+      .onChange(value => {
+        this.spectrumBars.setParams({ speed: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumSmoothness', 0, 1.0, 0.01)
+      .name('Smoothness')
+      .onChange(value => {
+        this.spectrumBars.setParams({ smoothness: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumOpacity', 0, 1.0, 0.01)
+      .name('Opacity')
+      .onChange(value => {
+        this.spectrumBars.setParams({ opacity: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumFadeStart', 0, 1.0, 0.01)
+      .name('Fade Start')
+      .onChange(value => {
+        this.spectrumBars.setParams({ fadeStart: value });
+      });
+    spectrumFolder
+      .add(this.params, 'spectrumFadeEnd', 0, 1.0, 0.01)
+      .name('Fade End')
+      .onChange(value => {
+        this.spectrumBars.setParams({ fadeEnd: value });
+      });
+    spectrumFolder.close();
   }
 
   setupEventListeners() {
@@ -494,6 +653,11 @@ class App {
       this.particleNetwork.update(elapsedTime);
     }
 
+    // Update spectrum bars
+    if (this.spectrumBars && this.params.spectrumBarsVisible) {
+      this.spectrumBars.update();
+    }
+
     // Render with TAA
     this.composer.render();
 
@@ -534,6 +698,11 @@ class App {
     // Dispose particle network
     if (this.particleNetwork) {
       this.particleNetwork.dispose();
+    }
+
+    // Dispose spectrum bars
+    if (this.spectrumBars) {
+      this.spectrumBars.dispose();
     }
 
     // Dispose composer and passes
