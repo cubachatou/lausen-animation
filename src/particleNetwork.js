@@ -398,12 +398,12 @@ export class ParticleNetwork {
     const normalizedX = (x - minX) / (maxX - minX);
 
     const activeColorCount = this.params.colorStops;
-    
+
     // Handle single color case
     if (activeColorCount <= 1) {
       return this.params.colors[0].clone();
     }
-    
+
     const segmentSize = 1.0 / (activeColorCount - 1);
     const segmentIndex = Math.floor(normalizedX / segmentSize);
     const segmentT = (normalizedX - segmentIndex * segmentSize) / segmentSize;
