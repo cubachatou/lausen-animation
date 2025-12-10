@@ -9,6 +9,7 @@ import { EdgeFadeShader } from './edgeFade.js';
 import { Wave } from './wave.js';
 import { ParticleNetwork } from './particleNetwork.js';
 import { SpectrumBars } from './spectrumBars.js';
+import { FloatingNumbers } from './floatingNumbers.js';
 
 class App {
   constructor() {
@@ -26,6 +27,7 @@ class App {
       waveVisible: true,
       particleNetworkVisible: true,
       spectrumBarsVisible: true,
+      floatingNumbersVisible: true,
 
       lineCount: 60,
       pointsPerLine: 7,
@@ -55,8 +57,8 @@ class App {
 
       fadeWidth: 0.2,
       fadeStrength: 1,
-      fadeWidthY: 0.2,
-      fadeStrengthY: 0, // Disabled by default
+      fadeWidthY: 0.3,
+      fadeStrengthY: 1,
 
       // Particle Network params
       particleCount: 50,
@@ -83,6 +85,17 @@ class App {
       spectrumFadeStart: 0.5,
       spectrumFadeEnd: 0.2,
       spectrumPositionY: -3,
+
+      // Floating Numbers params
+      floatingNumberCount: 15,
+      floatingNumberFontSize: 24,
+      floatingNumberOpacity: 1,
+      floatingNumberSpeed: 5,
+      floatingNumberSpeedVariation: 0.5,
+      floatingNumberMinSpacing: 2,
+      floatingNumberValueChangeInterval: 0.05,
+      floatingNumberDigitGap: -0.1,
+      floatingNumberSeed: 98765,
     };
 
     // Cache active colors to avoid repeated creation
@@ -160,6 +173,26 @@ class App {
     this.spectrumBars.mesh.visible = this.params.spectrumBarsVisible;
     this.scene.add(this.spectrumBars.mesh);
 
+    // Initialize floating numbers (works together with particle network)
+    this.floatingNumbers = new FloatingNumbers({
+      numberCount: this.params.floatingNumberCount,
+      fontSize: this.params.floatingNumberFontSize,
+      colors: this.getActiveColors(),
+      colorStops: this.params.colorStops,
+      opacity: this.params.floatingNumberOpacity,
+      speed: this.params.floatingNumberSpeed,
+      speedVariation: this.params.floatingNumberSpeedVariation,
+      boundsX: this.params.meshWidth * this.params.particleSpreadWidth,
+      boundsY: this.params.meshHeight * this.params.particleSpreadHeight,
+      minSpacing: this.params.floatingNumberMinSpacing,
+      valueChangeInterval: this.params.floatingNumberValueChangeInterval,
+      digitGap: this.params.floatingNumberDigitGap,
+      seed: this.params.floatingNumberSeed,
+      zPosition: -2.5, // Positioned near particle network
+    });
+    this.floatingNumbers.getGroup().visible = this.params.floatingNumbersVisible;
+    this.scene.add(this.floatingNumbers.getGroup());
+
     this.setupStats();
     this.setupCamera();
     this.setupRenderer();
@@ -220,6 +253,10 @@ class App {
 
     // Edge fade pass
     this.edgeFadePass = new ShaderPass(EdgeFadeShader);
+    this.edgeFadePass.uniforms.fadeWidth.value = this.params.fadeWidth;
+    this.edgeFadePass.uniforms.fadeStrength.value = this.params.fadeStrength;
+    this.edgeFadePass.uniforms.fadeWidthY.value = this.params.fadeWidthY;
+    this.edgeFadePass.uniforms.fadeStrengthY.value = this.params.fadeStrengthY;
     this.edgeFadePass.uniforms.backgroundColor.value = this.scene.background;
     this.edgeFadePass.renderToScreen = true; // Final pass renders to screen
     this.composer.addPass(this.edgeFadePass);
@@ -250,6 +287,12 @@ class App {
       .name('Spectrum Bars')
       .onChange(visible => {
         this.spectrumBars.mesh.visible = visible;
+      });
+    visibilityFolder
+      .add(this.params, 'floatingNumbersVisible')
+      .name('Floating Numbers')
+      .onChange(visible => {
+        this.floatingNumbers.getGroup().visible = visible;
       });
     visibilityFolder.open();
 
@@ -373,6 +416,8 @@ class App {
           colors: this.getActiveColors(),
           colorStops: this.params.colorStops,
         });
+        // Update floating numbers colors
+        this.floatingNumbers.updateColors(this.getActiveColors(), this.params.colorStops);
       });
 
     // Create color controllers using a loop to reduce redundancy
@@ -385,6 +430,7 @@ class App {
           this.wave.updateSingleColor(i - 1);
           this.particleNetwork.updateParams({ colors: this.getActiveColors() });
           this.spectrumBars.setParams({ colors: this.getActiveColors() });
+          this.floatingNumbers.updateColors(this.getActiveColors(), this.params.colorStops);
         });
     }
     colorFolder.close();
@@ -608,6 +654,108 @@ class App {
         this.spectrumBars.setParams({ fadeEnd: value });
       });
     spectrumFolder.close();
+
+    // Floating Numbers Controls
+    const floatingNumbersFolder = this.gui.addFolder('Floating Numbers');
+
+    // Seed control with random button
+    const floatingSeedController = floatingNumbersFolder
+      .add(this.params, 'floatingNumberSeed', 0, 999999, 1)
+      .name('Seed Number')
+      .onChange(seed => {
+        this.floatingNumbers.params.seed = seed;
+        this.floatingNumbers.params.colors = this.getActiveColors();
+        this.floatingNumbers.params.colorStops = this.params.colorStops;
+        this.floatingNumbers.recreate();
+      });
+
+    floatingNumbersFolder
+      .add(
+        {
+          randomSeed: () => {
+            const newSeed = Math.floor(Math.random() * 999999);
+            this.params.floatingNumberSeed = newSeed;
+            floatingSeedController.updateDisplay();
+            this.floatingNumbers.params.seed = newSeed;
+            this.floatingNumbers.params.colors = this.getActiveColors();
+            this.floatingNumbers.params.colorStops = this.params.colorStops;
+            this.floatingNumbers.recreate();
+          },
+        },
+        'randomSeed'
+      )
+      .name('🎲 Random Seed');
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberCount', 10, 50, 1)
+      .name('Number Count')
+      .onChange(value => {
+        this.floatingNumbers.params.numberCount = value;
+        this.floatingNumbers.params.colors = this.getActiveColors();
+        this.floatingNumbers.params.colorStops = this.params.colorStops;
+        this.floatingNumbers.recreate();
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberFontSize', 8, 48, 1)
+      .name('Font Size')
+      .onChange(value => {
+        this.floatingNumbers.params.fontSize = value;
+        this.floatingNumbers.params.colors = this.getActiveColors();
+        this.floatingNumbers.params.colorStops = this.params.colorStops;
+        this.floatingNumbers.recreate();
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberOpacity', 0.1, 1.0, 0.05)
+      .name('Opacity')
+      .onChange(value => {
+        this.floatingNumbers.setParams({ opacity: value });
+        // Update all existing sprites
+        for (const num of this.floatingNumbers.numbers) {
+          num.sprite.material.opacity = value;
+        }
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberSpeed', 0.1, 10, 0.1)
+      .name('Speed')
+      .onChange(value => {
+        this.floatingNumbers.setParams({ speed: value });
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberSpeedVariation', 0, 1.0, 0.05)
+      .name('Speed Variation')
+      .onChange(value => {
+        this.floatingNumbers.setParams({ speedVariation: value });
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberMinSpacing', 0.5, 10.0, 0.1)
+      .name('Min Spacing')
+      .onChange(value => {
+        this.floatingNumbers.setParams({ minSpacing: value });
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberValueChangeInterval', 0.01, 1.0, 0.01)
+      .name('Value Change Interval')
+      .onChange(value => {
+        this.floatingNumbers.setParams({ valueChangeInterval: value });
+      });
+
+    floatingNumbersFolder
+      .add(this.params, 'floatingNumberDigitGap', -0.1, 0.3, 0.01)
+      .name('Digit Gap')
+      .onChange(value => {
+        this.floatingNumbers.params.digitGap = value;
+        this.floatingNumbers.params.colors = this.getActiveColors();
+        this.floatingNumbers.params.colorStops = this.params.colorStops;
+        this.floatingNumbers.recreate();
+      });
+
+    floatingNumbersFolder.close();
   }
 
   setupEventListeners() {
@@ -658,6 +806,11 @@ class App {
       this.spectrumBars.update();
     }
 
+    // Update floating numbers
+    if (this.floatingNumbers && this.params.floatingNumbersVisible) {
+      this.floatingNumbers.update(elapsedTime);
+    }
+
     // Render with TAA
     this.composer.render();
 
@@ -703,6 +856,11 @@ class App {
     // Dispose spectrum bars
     if (this.spectrumBars) {
       this.spectrumBars.dispose();
+    }
+
+    // Dispose floating numbers
+    if (this.floatingNumbers) {
+      this.floatingNumbers.dispose();
     }
 
     // Dispose composer and passes
