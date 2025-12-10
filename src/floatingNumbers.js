@@ -281,7 +281,7 @@ export class FloatingNumbers {
 
     this.numbers.push(numberData);
     this.group.add(numberGroup);
-    
+
     // Add to spatial grid
     this._updateSpatialGrid(numberData);
 
@@ -417,7 +417,7 @@ export class FloatingNumbers {
         if (idx !== -1) cellNumbers.splice(idx, 1);
       }
     }
-    
+
     // Add to new cell
     const newCell = this._getGridCell(numberData.x);
     if (!this._spatialGrid.has(newCell)) {
@@ -433,12 +433,12 @@ export class FloatingNumbers {
     const cell = this._getGridCell(x);
     const minSpacing = this.params.minSpacing;
     const bottomY = -this.params.boundsY / 2 + 3;
-    
+
     // Check current cell and adjacent cells
     for (let c = cell - 1; c <= cell + 1; c++) {
       const cellNumbers = this._spatialGrid.get(c);
       if (!cellNumbers) continue;
-      
+
       for (const num of cellNumbers) {
         if (num === excludeNumber) continue;
         if (num.y >= bottomY) continue; // Only check bottom region
@@ -470,7 +470,7 @@ export class FloatingNumbers {
     numberData.y = newY;
     numberData.group.position.x = newX;
     numberData.group.position.y = newY;
-    
+
     // Update spatial grid
     this._updateSpatialGrid(numberData, oldX);
 
@@ -572,7 +572,7 @@ export class FloatingNumbers {
       this.group.remove(numberData.group);
     }
     this.numbers = [];
-    
+
     // Clear spatial grid
     this._spatialGrid.clear();
 
@@ -615,7 +615,7 @@ export class FloatingNumbers {
       this.group.remove(numberData.group);
     }
     this.numbers = [];
-    
+
     // Clear spatial grid
     this._spatialGrid.clear();
 

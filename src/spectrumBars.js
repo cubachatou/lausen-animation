@@ -37,27 +37,27 @@ export class SpectrumBars {
    */
   initRandomOffsets() {
     const barCount = this.params.barCount;
-    
+
     // Use Float32Arrays for GPU-compatible data
     this._randomPhases = new Float32Array(barCount * 4);
     this._randomFreqs = new Float32Array(barCount * 4);
     this._randomAmps = new Float32Array(barCount * 4);
-    
+
     for (let i = 0; i < barCount; i++) {
       const idx = i * 4;
-      
+
       // Phases (0 to 2π)
       this._randomPhases[idx] = Math.random() * Math.PI * 2;
       this._randomPhases[idx + 1] = Math.random() * Math.PI * 2;
       this._randomPhases[idx + 2] = Math.random() * Math.PI * 2;
       this._randomPhases[idx + 3] = Math.random() * Math.PI * 2;
-      
+
       // Frequencies
       this._randomFreqs[idx] = 0.5 + Math.random() * 1.5;
       this._randomFreqs[idx + 1] = 0.3 + Math.random() * 1.2;
       this._randomFreqs[idx + 2] = 0.7 + Math.random() * 0.8;
       this._randomFreqs[idx + 3] = 0.2 + Math.random() * 0.6;
-      
+
       // Amplitudes
       this._randomAmps[idx] = 0.2 + Math.random() * 0.3;
       this._randomAmps[idx + 1] = 0.15 + Math.random() * 0.25;
@@ -139,18 +139,9 @@ export class SpectrumBars {
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.params.barCount * 3), 3);
 
     // Add instance attributes for GPU animation
-    this.mesh.geometry.setAttribute(
-      'aRandomPhases',
-      new THREE.InstancedBufferAttribute(this._randomPhases, 4)
-    );
-    this.mesh.geometry.setAttribute(
-      'aRandomFreqs',
-      new THREE.InstancedBufferAttribute(this._randomFreqs, 4)
-    );
-    this.mesh.geometry.setAttribute(
-      'aRandomAmps',
-      new THREE.InstancedBufferAttribute(this._randomAmps, 4)
-    );
+    this.mesh.geometry.setAttribute('aRandomPhases', new THREE.InstancedBufferAttribute(this._randomPhases, 4));
+    this.mesh.geometry.setAttribute('aRandomFreqs', new THREE.InstancedBufferAttribute(this._randomFreqs, 4));
+    this.mesh.geometry.setAttribute('aRandomAmps', new THREE.InstancedBufferAttribute(this._randomAmps, 4));
 
     // Set initial colors
     this.updateColors();
@@ -163,7 +154,7 @@ export class SpectrumBars {
 
     for (let i = 0; i < this.params.barCount; i++) {
       this._cachedXPositions[i] = startX + i * step;
-      
+
       // Set position only (height is handled in shader)
       this.dummy.position.set(this._cachedXPositions[i], 0, 0);
       this.dummy.scale.set(1, 1, 1);
@@ -224,7 +215,7 @@ export class SpectrumBars {
     // Update uniforms if changed
     if (this.mesh && this.mesh.material.uniforms) {
       const uniforms = this.mesh.material.uniforms;
-      
+
       if (newParams.fadeStart !== undefined) {
         uniforms.uFadeStart.value = newParams.fadeStart;
       }
