@@ -38,6 +38,13 @@ export class FloatingNumbers {
     // Material pool for sprite reuse - keyed by colorIndex
     this._materialPool = new Map();
 
+    // Spatial grid for fast collision detection
+    this._spatialGrid = new Map();
+    this._gridCellSize = this.params.minSpacing;
+
+    // Pre-allocated character array for string generation (max 7 chars: 3 + 1 + 3)
+    this._charBuffer = new Array(7);
+
     // Initialize seeded random number generator
     this.rng = this.createSeededRandom(this.params.seed);
 
@@ -99,7 +106,7 @@ export class FloatingNumbers {
     const ctx = canvas.getContext('2d');
 
     // Use 2x resolution for sharper text (retina-like)
-    const scale = 2;
+    const scale = 1.5;
     const fontSize = this.params.fontSize * scale;
     const padding = 2 * scale; // Minimal padding
 
@@ -158,26 +165,31 @@ export class FloatingNumbers {
 
   /**
    * Generate a random number string (1-3 digits before dot, 1-3 after)
+   * Uses pre-allocated character buffer to avoid string concatenation
    */
   generateRandomValue() {
     const digitsBefore = Math.floor(this.rng() * 3) + 1;
     const digitsAfter = Math.floor(this.rng() * 3) + 1;
+    const chars = this._charBuffer;
+    let idx = 0;
 
-    let beforeDot = '';
+    // Digits before dot
     for (let i = 0; i < digitsBefore; i++) {
-      if (i === 0) {
-        beforeDot += digitsBefore > 1 ? Math.floor(this.rng() * 9) + 1 : Math.floor(this.rng() * 10);
+      if (i === 0 && digitsBefore > 1) {
+        chars[idx++] = String.fromCharCode(49 + Math.floor(this.rng() * 9)); // '1'-'9'
       } else {
-        beforeDot += Math.floor(this.rng() * 10);
+        chars[idx++] = String.fromCharCode(48 + Math.floor(this.rng() * 10)); // '0'-'9'
       }
     }
 
-    let afterDot = '';
+    chars[idx++] = '.';
+
+    // Digits after dot
     for (let i = 0; i < digitsAfter; i++) {
-      afterDot += Math.floor(this.rng() * 10);
+      chars[idx++] = String.fromCharCode(48 + Math.floor(this.rng() * 10)); // '0'-'9'
     }
 
-    return beforeDot + '.' + afterDot;
+    return chars.slice(0, idx).join('');
   }
 
   /**
@@ -269,6 +281,9 @@ export class FloatingNumbers {
 
     this.numbers.push(numberData);
     this.group.add(numberGroup);
+    
+    // Add to spatial grid
+    this._updateSpatialGrid(numberData);
 
     return numberData;
   }
@@ -279,11 +294,11 @@ export class FloatingNumbers {
    */
   getSpriteMaterial(char, colorIndex) {
     const key = char + '_' + colorIndex;
-    
+
     if (!this._materialPool.has(key)) {
       const digitData = this.digitAtlas.get(key);
       if (!digitData) return null;
-      
+
       const material = new THREE.SpriteMaterial({
         map: digitData.texture,
         transparent: true,
@@ -293,7 +308,7 @@ export class FloatingNumbers {
       });
       this._materialPool.set(key, material);
     }
-    
+
     return this._materialPool.get(key);
   }
 
@@ -383,35 +398,83 @@ export class FloatingNumbers {
   }
 
   /**
-   * Reset a number to the bottom with new position (outside viewport)
+   * Get spatial grid cell key for a position
    */
-  resetNumber(numberData) {
-    const newX = (this.rng() - 0.5) * this.params.boundsX;
-    const newY = -this.params.boundsY / 2 - 2 - this.rng() * 2;
+  _getGridCell(x) {
+    return Math.floor((x + this.params.boundsX / 2) / this._gridCellSize);
+  }
 
-    const bottomNumbers = this.numbers.filter(n => n !== numberData && n.y < -this.params.boundsY / 2 + 3);
+  /**
+   * Update spatial grid with number position
+   */
+  _updateSpatialGrid(numberData, oldX = null) {
+    // Remove from old cell if provided
+    if (oldX !== null) {
+      const oldCell = this._getGridCell(oldX);
+      const cellNumbers = this._spatialGrid.get(oldCell);
+      if (cellNumbers) {
+        const idx = cellNumbers.indexOf(numberData);
+        if (idx !== -1) cellNumbers.splice(idx, 1);
+      }
+    }
+    
+    // Add to new cell
+    const newCell = this._getGridCell(numberData.x);
+    if (!this._spatialGrid.has(newCell)) {
+      this._spatialGrid.set(newCell, []);
+    }
+    this._spatialGrid.get(newCell).push(numberData);
+  }
 
-    let finalX = newX;
-    let attempts = 0;
-    while (attempts < 30) {
-      let overlaps = false;
-      for (const num of bottomNumbers) {
-        if (Math.abs(finalX - num.x) < this.params.minSpacing) {
-          overlaps = true;
-          break;
+  /**
+   * Check if X position overlaps with numbers in nearby grid cells (bottom region only)
+   */
+  _checkSpatialOverlap(x, excludeNumber = null) {
+    const cell = this._getGridCell(x);
+    const minSpacing = this.params.minSpacing;
+    const bottomY = -this.params.boundsY / 2 + 3;
+    
+    // Check current cell and adjacent cells
+    for (let c = cell - 1; c <= cell + 1; c++) {
+      const cellNumbers = this._spatialGrid.get(c);
+      if (!cellNumbers) continue;
+      
+      for (const num of cellNumbers) {
+        if (num === excludeNumber) continue;
+        if (num.y >= bottomY) continue; // Only check bottom region
+        if (Math.abs(x - num.x) < minSpacing) {
+          return true;
         }
       }
-      if (!overlaps) break;
-      finalX = (this.rng() - 0.5) * this.params.boundsX;
+    }
+    return false;
+  }
+
+  /**
+   * Reset a number to the bottom with new position (outside viewport)
+   * Uses spatial grid for O(1) collision detection
+   */
+  resetNumber(numberData) {
+    const oldX = numberData.x;
+    let newX = (this.rng() - 0.5) * this.params.boundsX;
+    const newY = -this.params.boundsY / 2 - 2 - this.rng() * 2;
+
+    // Use spatial grid for fast collision check
+    let attempts = 0;
+    while (attempts < 30 && this._checkSpatialOverlap(newX, numberData)) {
+      newX = (this.rng() - 0.5) * this.params.boundsX;
       attempts++;
     }
 
-    numberData.x = finalX;
+    numberData.x = newX;
     numberData.y = newY;
-    numberData.group.position.x = finalX;
+    numberData.group.position.x = newX;
     numberData.group.position.y = newY;
+    
+    // Update spatial grid
+    this._updateSpatialGrid(numberData, oldX);
 
-    const newColorIndex = this.getColorIndexForPosition(finalX);
+    const newColorIndex = this.getColorIndexForPosition(newX);
     if (newColorIndex !== numberData.colorIndex) {
       numberData.colorIndex = newColorIndex;
       // Update to use shared materials for new color
@@ -509,6 +572,9 @@ export class FloatingNumbers {
       this.group.remove(numberData.group);
     }
     this.numbers = [];
+    
+    // Clear spatial grid
+    this._spatialGrid.clear();
 
     this.rng = this.createSeededRandom(this.params.seed);
 
@@ -549,6 +615,9 @@ export class FloatingNumbers {
       this.group.remove(numberData.group);
     }
     this.numbers = [];
+    
+    // Clear spatial grid
+    this._spatialGrid.clear();
 
     // Dispose shared materials from pool
     for (const material of this._materialPool.values()) {

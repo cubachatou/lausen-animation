@@ -36,6 +36,8 @@ export class ParticleNetwork {
     // Reusable Color objects to avoid allocations in hot paths
     this._tempColor = new THREE.Color();
     this._tempColor2 = new THREE.Color();
+    // Reusable matrix for instance updates (avoids allocation in hot path)
+    this._tempMatrix = new THREE.Matrix4();
     // Reusable array for line positions (will be sized during createLineMeshes)
     this._linePositions = null;
 
@@ -187,7 +189,7 @@ export class ParticleNetwork {
       // For each point, find its neighbors and move towards less dense areas
       const newPositions = positions.map((pos, idx) => {
         // Find nearby points
-        const searchRadius = Math.max(width, height) / Math.sqrt(positions.length) * 2;
+        const searchRadius = (Math.max(width, height) / Math.sqrt(positions.length)) * 2;
         const searchRadiusSq = searchRadius * searchRadius;
 
         let sumX = 0;
@@ -233,19 +235,6 @@ export class ParticleNetwork {
         positions[i] = newPositions[i];
       }
     }
-  }
-
-  /**
-   * Check if three points are nearly collinear (form a nearly straight line)
-   * Used for connection validation
-   */
-  isNearlyCollinear(p1, p2, p3, threshold = 0.15) {
-    const area = Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)) / 2;
-    const d12sq = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
-    const d23sq = (p3.x - p2.x) ** 2 + (p3.y - p2.y) ** 2;
-    const d31sq = (p1.x - p3.x) ** 2 + (p1.y - p3.y) ** 2;
-    const perimeter = Math.sqrt(d12sq) + Math.sqrt(d23sq) + Math.sqrt(d31sq);
-    return area / perimeter < threshold;
   }
 
   /**
@@ -433,10 +422,24 @@ export class ParticleNetwork {
     // Create base geometry with proper size (not scaled later)
     const geometry = new THREE.SphereGeometry(this.params.particleSize, 8, 8);
 
-    // Create custom shader material for gradient colors with depth-based scaling
+    // Calculate Z bounds for scale calculation
+    const movementRangeZ = this.params.movementRange * 0.3;
+    const minZ = this.params.zPosition - this.params.boundsZ / 2 - movementRangeZ;
+    const maxZ = this.params.zPosition + this.params.boundsZ / 2 + movementRangeZ;
+    const zRange = maxZ - minZ || 1;
+
+    // Create custom shader material for gradient colors with GPU-based animation
     const material = new THREE.ShaderMaterial({
       uniforms: {
         opacity: { value: this.params.opacity },
+        uTime: { value: 0.0 },
+        uMovementSpeed: { value: this.params.movementSpeed },
+        uMovementRange: { value: this.params.movementRange },
+        uMovementRangeZ: { value: movementRangeZ },
+        uMinZ: { value: minZ },
+        uZRange: { value: zRange },
+        uScaleBase: { value: 1.0 - this.params.scaleRange },
+        uScaleMultiplier: { value: this.params.scaleRange * 2 },
       },
       vertexShader: vertexShader,
       fragmentShader: fragmentShader,
@@ -447,33 +450,50 @@ export class ParticleNetwork {
 
     this.particleMesh = new THREE.InstancedMesh(geometry, material, this.params.particleCount);
 
-    // Set up instance colors and scales
+    // Set up instance attributes
     const colors = new Float32Array(this.params.particleCount * 3);
     const scales = new Float32Array(this.params.particleCount);
-
-    // Calculate scale based on Z position (closer to camera = larger)
-    // Camera is at positive Z looking at negative Z
-    const minZ = this.params.zPosition - this.params.boundsZ / 2;
-    const maxZ = this.params.zPosition + this.params.boundsZ / 2;
+    const startPositions = new Float32Array(this.params.particleCount * 3);
+    const offsets = new Float32Array(this.params.particleCount * 3);
+    const speedMults = new Float32Array(this.params.particleCount * 3);
 
     for (let i = 0; i < this.params.particleCount; i++) {
-      this.getColorForPosition(this.particles[i].position.x, this._tempColor);
+      const particle = this.particles[i];
+
+      // Colors
+      this.getColorForPosition(particle.startPosition.x, this._tempColor);
       colors[i * 3 + 0] = this._tempColor.r;
       colors[i * 3 + 1] = this._tempColor.g;
       colors[i * 3 + 2] = this._tempColor.b;
 
-      // Calculate scale: particles closer to camera (higher Z) are larger
-      const normalizedZ = (this.particles[i].position.z - minZ) / (maxZ - minZ || 1);
-      scales[i] = 1.0 - this.params.scaleRange + normalizedZ * this.params.scaleRange * 2;
+      // Base scale (will be multiplied by dynamic scale in shader)
+      scales[i] = 1.0;
+
+      // Start positions for GPU animation
+      startPositions[i * 3 + 0] = particle.startPosition.x;
+      startPositions[i * 3 + 1] = particle.startPosition.y;
+      startPositions[i * 3 + 2] = particle.startPosition.z;
+
+      // Animation offsets
+      offsets[i * 3 + 0] = particle.offsetX;
+      offsets[i * 3 + 1] = particle.offsetY;
+      offsets[i * 3 + 2] = particle.offsetZ;
+
+      // Speed multipliers
+      speedMults[i * 3 + 0] = particle.speedMultX;
+      speedMults[i * 3 + 1] = particle.speedMultY;
+      speedMults[i * 3 + 2] = particle.speedMultZ;
     }
 
     this.particleMesh.geometry.setAttribute('instanceColor', new THREE.InstancedBufferAttribute(colors, 3));
     this.particleMesh.geometry.setAttribute('instanceScale', new THREE.InstancedBufferAttribute(scales, 1));
+    this.particleMesh.geometry.setAttribute('startPosition', new THREE.InstancedBufferAttribute(startPositions, 3));
+    this.particleMesh.geometry.setAttribute('offsets', new THREE.InstancedBufferAttribute(offsets, 3));
+    this.particleMesh.geometry.setAttribute('speedMults', new THREE.InstancedBufferAttribute(speedMults, 3));
 
-    // Set initial positions
+    // Set identity matrices (position is now handled in shader)
     const matrix = new THREE.Matrix4();
     for (let i = 0; i < this.params.particleCount; i++) {
-      matrix.setPosition(this.particles[i].position);
       this.particleMesh.setMatrixAt(i, matrix);
     }
     this.particleMesh.instanceMatrix.needsUpdate = true;
@@ -491,9 +511,9 @@ export class ParticleNetwork {
     const colors = new Float32Array(connectionCount * 6);
 
     for (let i = 0; i < connectionCount; i++) {
-      const [idA, idB] = this.connections[i];
-      const posA = this.particles[idA].position;
-      const posB = this.particles[idB].position;
+      const connection = this.connections[i];
+      const posA = this.particles[connection[0]].position;
+      const posB = this.particles[connection[1]].position;
 
       const posIdx = i * 6;
       // Set positions
@@ -554,29 +574,24 @@ export class ParticleNetwork {
       return;
     }
 
-    const matrix = new THREE.Matrix4();
-    const scales = this.particleMesh.geometry.attributes.instanceScale.array;
+    // Update shader time uniform for GPU-based particle animation
+    if (this.particleMesh.material.uniforms) {
+      this.particleMesh.material.uniforms.uTime.value = elapsedTime;
+    }
 
     // Cache parameters to reduce property access
     const movementSpeed = this.params.movementSpeed;
     const movementRange = this.params.movementRange;
-    const scaleRange = this.params.scaleRange;
     const particleCount = this.params.particleCount;
-
-    // Calculate Z bounds for scale calculation
     const movementRangeZ = movementRange * 0.3;
-    const minZ = this.params.zPosition - this.params.boundsZ / 2 - movementRangeZ;
-    const maxZ = this.params.zPosition + this.params.boundsZ / 2 + movementRangeZ;
-    const zRange = maxZ - minZ || 1;
-    const scaleBase = 1.0 - scaleRange;
-    const scaleMultiplier = scaleRange * 2;
 
-    // Update particle positions using sine waves for smooth, continuous movement
+    // Update particle positions on CPU (needed for line endpoint calculations)
+    // This is a lightweight sync - no matrix updates needed since particles render via GPU
     for (let i = 0; i < particleCount; i++) {
       const particle = this.particles[i];
       const startPos = particle.startPosition;
 
-      // Calculate new position using sine waves
+      // Calculate new position using sine waves (mirrors GPU calculation)
       const timeX = elapsedTime * movementSpeed * particle.speedMultX + particle.offsetX;
       const timeY = elapsedTime * movementSpeed * particle.speedMultY + particle.offsetY;
       const timeZ = elapsedTime * movementSpeed * particle.speedMultZ + particle.offsetZ;
@@ -584,17 +599,7 @@ export class ParticleNetwork {
       particle.position.x = startPos.x + Math.sin(timeX) * movementRange;
       particle.position.y = startPos.y + Math.sin(timeY) * movementRange;
       particle.position.z = startPos.z + Math.sin(timeZ) * movementRangeZ;
-
-      // Update scale based on Z position (closer to camera = larger)
-      const normalizedZ = (particle.position.z - minZ) / zRange;
-      scales[i] = scaleBase + normalizedZ * scaleMultiplier;
-
-      // Update instance matrix
-      matrix.setPosition(particle.position);
-      this.particleMesh.setMatrixAt(i, matrix);
     }
-    this.particleMesh.instanceMatrix.needsUpdate = true;
-    this.particleMesh.geometry.attributes.instanceScale.needsUpdate = true;
 
     // Update line positions - reuse pre-allocated array
     const linePositions = this._linePositions;
@@ -602,9 +607,9 @@ export class ParticleNetwork {
     const particles = this.particles;
 
     for (let i = 0; i < connectionCount; i++) {
-      const [idA, idB] = this.connections[i];
-      const posA = particles[idA].position;
-      const posB = particles[idB].position;
+      const connection = this.connections[i];
+      const posA = particles[connection[0]].position;
+      const posB = particles[connection[1]].position;
 
       const idx = i * 6;
       linePositions[idx] = posA.x;
@@ -639,11 +644,11 @@ export class ParticleNetwork {
       this._lineColors = new Float32Array(connectionCount * 6);
     }
     const lineColors = this._lineColors;
-    
+
     for (let i = 0; i < connectionCount; i++) {
-      const [idA, idB] = this.connections[i];
-      const posA = this.particles[idA].position;
-      const posB = this.particles[idB].position;
+      const connection = this.connections[i];
+      const posA = this.particles[connection[0]].position;
+      const posB = this.particles[connection[1]].position;
 
       this.getColorForPosition(posA.x, this._tempColor);
       this.getColorForPosition(posB.x, this._tempColor2);
@@ -665,16 +670,30 @@ export class ParticleNetwork {
   updateParams(newParams) {
     Object.assign(this.params, newParams);
 
-    // Update particle material
+    // Update particle material uniforms
     if (this.particleMesh && this.particleMesh.material.uniforms) {
-      this.particleMesh.material.uniforms.opacity.value = this.params.opacity;
+      const uniforms = this.particleMesh.material.uniforms;
+      uniforms.opacity.value = this.params.opacity;
+      uniforms.uMovementSpeed.value = this.params.movementSpeed;
+      uniforms.uMovementRange.value = this.params.movementRange;
+
+      // Recalculate Z-related uniforms
+      const movementRangeZ = this.params.movementRange * 0.3;
+      const minZ = this.params.zPosition - this.params.boundsZ / 2 - movementRangeZ;
+      const maxZ = this.params.zPosition + this.params.boundsZ / 2 + movementRangeZ;
+      const zRange = maxZ - minZ || 1;
+
+      uniforms.uMovementRangeZ.value = movementRangeZ;
+      uniforms.uMinZ.value = minZ;
+      uniforms.uZRange.value = zRange;
+      uniforms.uScaleBase.value = 1.0 - this.params.scaleRange;
+      uniforms.uScaleMultiplier.value = this.params.scaleRange * 2;
     }
 
     // Update line material
     if (this.lineMesh && this.lineMesh.material) {
       this.lineMesh.material.opacity = this.params.opacity * 0.5;
       this.lineMesh.material.linewidth = this.params.lineWidth;
-      this.lineMesh.material.needsUpdate = true;
     }
 
     // If colors changed, update them

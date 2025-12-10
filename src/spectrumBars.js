@@ -33,24 +33,36 @@ export class SpectrumBars {
   /**
    * Initialize random phase offsets for each bar
    * Uses multiple layers of randomness for organic movement
+   * Stores in Float32Arrays for GPU upload
    */
   initRandomOffsets() {
-    this.randomOffsets = [];
-    for (let i = 0; i < this.params.barCount; i++) {
-      this.randomOffsets.push({
-        phase1: Math.random() * Math.PI * 2,
-        phase2: Math.random() * Math.PI * 2,
-        phase3: Math.random() * Math.PI * 2,
-        phase4: Math.random() * Math.PI * 2,
-        freq1: 0.5 + Math.random() * 1.5, // Random frequency multiplier
-        freq2: 0.3 + Math.random() * 1.2,
-        freq3: 0.7 + Math.random() * 0.8,
-        freq4: 0.2 + Math.random() * 0.6,
-        amp1: 0.2 + Math.random() * 0.3, // Random amplitude weights
-        amp2: 0.15 + Math.random() * 0.25,
-        amp3: 0.1 + Math.random() * 0.2,
-        amp4: 0.05 + Math.random() * 0.15,
-      });
+    const barCount = this.params.barCount;
+    
+    // Use Float32Arrays for GPU-compatible data
+    this._randomPhases = new Float32Array(barCount * 4);
+    this._randomFreqs = new Float32Array(barCount * 4);
+    this._randomAmps = new Float32Array(barCount * 4);
+    
+    for (let i = 0; i < barCount; i++) {
+      const idx = i * 4;
+      
+      // Phases (0 to 2π)
+      this._randomPhases[idx] = Math.random() * Math.PI * 2;
+      this._randomPhases[idx + 1] = Math.random() * Math.PI * 2;
+      this._randomPhases[idx + 2] = Math.random() * Math.PI * 2;
+      this._randomPhases[idx + 3] = Math.random() * Math.PI * 2;
+      
+      // Frequencies
+      this._randomFreqs[idx] = 0.5 + Math.random() * 1.5;
+      this._randomFreqs[idx + 1] = 0.3 + Math.random() * 1.2;
+      this._randomFreqs[idx + 2] = 0.7 + Math.random() * 0.8;
+      this._randomFreqs[idx + 3] = 0.2 + Math.random() * 0.6;
+      
+      // Amplitudes
+      this._randomAmps[idx] = 0.2 + Math.random() * 0.3;
+      this._randomAmps[idx + 1] = 0.15 + Math.random() * 0.25;
+      this._randomAmps[idx + 2] = 0.1 + Math.random() * 0.2;
+      this._randomAmps[idx + 3] = 0.05 + Math.random() * 0.15;
     }
   }
 
@@ -102,15 +114,19 @@ export class SpectrumBars {
     // This ensures bars grow upwards from Y=0
     geometry.translate(0, 0.5, 0);
 
-    // Create custom shader material with vertical fade
+    // Create custom shader material with GPU-based animation
     const material = new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
       uniforms: {
         uFadeStart: { value: this.params.fadeStart },
         uFadeEnd: { value: this.params.fadeEnd },
-        uMaxHeight: { value: this.params.maxHeight + this.params.baseHeight },
+        uMaxHeight: { value: this.params.maxHeight },
+        uBaseHeight: { value: this.params.baseHeight },
         uOpacity: { value: this.params.opacity },
+        uTime: { value: 0.0 },
+        uSpeed: { value: this.params.speed },
+        uSmoothness: { value: this.params.smoothness },
       },
       transparent: true,
       side: THREE.DoubleSide,
@@ -122,11 +138,39 @@ export class SpectrumBars {
     // Enable instance colors
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.params.barCount * 3), 3);
 
+    // Add instance attributes for GPU animation
+    this.mesh.geometry.setAttribute(
+      'aRandomPhases',
+      new THREE.InstancedBufferAttribute(this._randomPhases, 4)
+    );
+    this.mesh.geometry.setAttribute(
+      'aRandomFreqs',
+      new THREE.InstancedBufferAttribute(this._randomFreqs, 4)
+    );
+    this.mesh.geometry.setAttribute(
+      'aRandomAmps',
+      new THREE.InstancedBufferAttribute(this._randomAmps, 4)
+    );
+
     // Set initial colors
     this.updateColors();
 
-    // Initial positioning
-    this.updatePositions(0);
+    // Cache X positions and set initial instance matrices (position only, no height scaling)
+    this._cachedXPositions = new Float32Array(this.params.barCount);
+    const barWidthCalc = this.getBarWidth();
+    const startX = -this.params.totalWidth / 2 + barWidthCalc / 2;
+    const step = barWidthCalc + this.params.barGap;
+
+    for (let i = 0; i < this.params.barCount; i++) {
+      this._cachedXPositions[i] = startX + i * step;
+      
+      // Set position only (height is handled in shader)
+      this.dummy.position.set(this._cachedXPositions[i], 0, 0);
+      this.dummy.scale.set(1, 1, 1);
+      this.dummy.updateMatrix();
+      this.mesh.setMatrixAt(i, this.dummy.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -144,77 +188,26 @@ export class SpectrumBars {
 
   /**
    * Calculate the X position for a bar at given index, centered around origin
+   * Uses cached positions when available
    */
   getBarXPosition(index) {
+    if (this._cachedXPositions && this._cachedXPositions[index] !== undefined) {
+      return this._cachedXPositions[index];
+    }
     const barWidth = this.getBarWidth();
     const startX = -this.params.totalWidth / 2 + barWidth / 2;
     return startX + index * (barWidth + this.params.barGap);
   }
 
   /**
-   * Calculate simulated height based on index and time
-   * Uses multiple sine waves with random offsets for organic, non-repeating movement
-   */
-  calculateHeight(index, time) {
-    const { maxHeight, baseHeight, speed, smoothness } = this.params;
-    const offsets = this.randomOffsets[index];
-
-    if (!offsets) return baseHeight;
-
-    const t = time * speed;
-
-    // Combine multiple sine waves with different frequencies and phases
-    // Each bar has its own random offsets, creating unique movement patterns
-    // Use absolute values to ensure waves are always positive
-    const wave1 = Math.abs(Math.sin(t * offsets.freq1 + offsets.phase1)) * offsets.amp1;
-    const wave2 = Math.abs(Math.sin(t * offsets.freq2 + offsets.phase2)) * offsets.amp2;
-    const wave3 = Math.abs(Math.sin(t * offsets.freq3 + offsets.phase3)) * offsets.amp3;
-    const wave4 = Math.abs(Math.sin(t * offsets.freq4 + offsets.phase4)) * offsets.amp4;
-
-    // Sum of all amplitudes for normalization
-    const totalAmp = offsets.amp1 + offsets.amp2 + offsets.amp3 + offsets.amp4;
-
-    // Combine waves and normalize to 0-1 range
-    const combined = (wave1 + wave2 + wave3 + wave4) / totalAmp;
-
-    // Apply smoothness - higher smoothness creates more gradual changes
-    const smoothed = Math.pow(combined, 1 - smoothness * 0.5);
-
-    // Remap from 0-1 to minValue-1 range (minValue = 0.2 means bars never go below 20%)
-    const minValue = 0.2;
-    const remapped = minValue + smoothed * (1 - minValue);
-
-    // Calculate final height
-    return remapped * maxHeight + baseHeight;
-  }
-
-  /**
-   * Update all bar positions and heights
-   */
-  updatePositions(time) {
-    for (let i = 0; i < this.params.barCount; i++) {
-      const x = this.getBarXPosition(i);
-      const height = this.calculateHeight(i, time);
-
-      // Set position and scale
-      this.dummy.position.set(x, 0, 0);
-      this.dummy.scale.set(1, height, 1);
-      this.dummy.updateMatrix();
-
-      // Apply matrix to instance
-      this.mesh.setMatrixAt(i, this.dummy.matrix);
-    }
-
-    // Flag that instance matrices need to be updated on GPU
-    this.mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  /**
    * Update animation - call this in your render loop
+   * Only updates the time uniform (height is calculated in GPU shader)
    */
   update() {
     const time = this.clock.getElapsedTime();
-    this.updatePositions(time);
+    if (this.mesh && this.mesh.material.uniforms) {
+      this.mesh.material.uniforms.uTime.value = time;
+    }
   }
 
   /**
@@ -229,18 +222,29 @@ export class SpectrumBars {
     }
 
     // Update uniforms if changed
-    if (this.mesh.material.uniforms) {
+    if (this.mesh && this.mesh.material.uniforms) {
+      const uniforms = this.mesh.material.uniforms;
+      
       if (newParams.fadeStart !== undefined) {
-        this.mesh.material.uniforms.uFadeStart.value = newParams.fadeStart;
+        uniforms.uFadeStart.value = newParams.fadeStart;
       }
       if (newParams.fadeEnd !== undefined) {
-        this.mesh.material.uniforms.uFadeEnd.value = newParams.fadeEnd;
+        uniforms.uFadeEnd.value = newParams.fadeEnd;
       }
-      if (newParams.maxHeight !== undefined || newParams.baseHeight !== undefined) {
-        this.mesh.material.uniforms.uMaxHeight.value = this.params.maxHeight + this.params.baseHeight;
+      if (newParams.maxHeight !== undefined) {
+        uniforms.uMaxHeight.value = this.params.maxHeight;
+      }
+      if (newParams.baseHeight !== undefined) {
+        uniforms.uBaseHeight.value = this.params.baseHeight;
       }
       if (newParams.opacity !== undefined) {
-        this.mesh.material.uniforms.uOpacity.value = newParams.opacity;
+        uniforms.uOpacity.value = newParams.opacity;
+      }
+      if (newParams.speed !== undefined) {
+        uniforms.uSpeed.value = newParams.speed;
+      }
+      if (newParams.smoothness !== undefined) {
+        uniforms.uSmoothness.value = newParams.smoothness;
       }
     }
   }
@@ -283,7 +287,10 @@ export class SpectrumBars {
       }
       this.mesh = null;
     }
-    // Clear arrays to help GC
-    this.randomOffsets = [];
+    // Clear typed arrays to help GC
+    this._randomPhases = null;
+    this._randomFreqs = null;
+    this._randomAmps = null;
+    this._cachedXPositions = null;
   }
 }
