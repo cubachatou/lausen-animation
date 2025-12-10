@@ -50,7 +50,7 @@ export class FloatingNumbers {
    * Load the Overtime LCD font
    */
   async loadFont() {
-    const font = new FontFace('Overtime LCD', 'url(/fonts/Overtime-LCD.woff2)');
+    const font = new FontFace('Overtime LCD', 'url(./fonts/LCD.woff2)');
     try {
       const loadedFont = await font.load();
       document.fonts.add(loadedFont);
