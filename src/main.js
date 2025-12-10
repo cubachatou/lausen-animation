@@ -548,7 +548,7 @@ class App {
         this.particleNetwork.params.scaleRange = this.params.particleScaleRange;
       });
     particleFolder
-      .add(this.params, 'particleSpreadWidth', 0.3, 2.0, 0.8)
+      .add(this.params, 'particleSpreadWidth', 0.1, 2.0, 0.1)
       .name('Spread Width')
       .onChange(() => {
         this.particleNetwork.params.boundsX = this.params.meshWidth * this.params.particleSpreadWidth;

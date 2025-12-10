@@ -73,157 +73,180 @@ export class ParticleNetwork {
   }
 
   /**
-   * Generate evenly distributed positions using Poisson disk sampling
-   * This ensures particles are well-spread with no clustering
+   * Generate evenly distributed positions using grid-based jittered sampling
+   * This ensures particles are uniformly spread across the entire area
    */
   generatePoissonDiskPositions(count, width, height, minDistance) {
     const positions = [];
 
-    // Adjust minimum distance to ensure particles spread across the full width
-    // Calculate how many particles can fit in the width with given minDistance
-    const maxParticlesInRow = Math.floor(width / minDistance);
+    // Calculate optimal grid dimensions based on particle count
+    // We want approximately equal spacing in X and Y
+    const aspectRatio = width / height;
+    const gridRows = Math.ceil(Math.sqrt(count / aspectRatio));
+    const gridCols = Math.ceil(count / gridRows);
 
-    // If we have fewer particles than can fit, reduce minDistance to spread them out
-    if (count < maxParticlesInRow * 2) {
-      minDistance = Math.min(minDistance, (width / Math.sqrt(count)) * 0.6);
-    }
+    // Calculate cell dimensions
+    const cellWidth = width / gridCols;
+    const cellHeight = height / gridRows;
 
-    const cellSize = minDistance / Math.sqrt(2);
-    const gridWidth = Math.ceil(width / cellSize);
-    const gridHeight = Math.ceil(height / cellSize);
-    const grid = new Array(gridWidth * gridHeight).fill(null);
-    const activeList = [];
-
-    // Helper to get grid index
-    const getGridIndex = (x, y) => {
-      const gridX = Math.floor((x + width / 2) / cellSize);
-      const gridY = Math.floor((y + height / 2) / cellSize);
-      if (gridX < 0 || gridX >= gridWidth || gridY < 0 || gridY >= gridHeight) return -1;
-      return gridY * gridWidth + gridX;
-    };
-
-    // Add multiple seed points across the width to ensure full coverage
-    const seedCount = Math.min(5, Math.ceil(count / 10));
-    for (let i = 0; i < seedCount; i++) {
-      const seedPoint = {
-        x: (i / (seedCount - 1) - 0.5) * width * 0.9,
-        y: (this.rng() - 0.5) * height * 0.8,
-      };
-      positions.push(seedPoint);
-      activeList.push(seedPoint);
-      const seedIdx = getGridIndex(seedPoint.x, seedPoint.y);
-      if (seedIdx >= 0) grid[seedIdx] = seedPoint;
-    }
-
-    // Generate points
-    const maxAttempts = 30;
-    const minDistSq = minDistance * minDistance; // Cache squared distance
-
-    while (activeList.length > 0 && positions.length < count) {
-      const randomIndex = Math.floor(this.rng() * activeList.length);
-      const point = activeList[randomIndex];
-      let found = false;
-
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const angle = this.rng() * Math.PI * 2;
-        const radius = minDistance * (1 + this.rng());
-        const newPoint = {
-          x: point.x + Math.cos(angle) * radius,
-          y: point.y + Math.sin(angle) * radius,
-        };
-
-        // Check if in bounds
-        if (Math.abs(newPoint.x) > width / 2 || Math.abs(newPoint.y) > height / 2) {
-          continue;
-        }
-
-        // Check if far enough from existing points
-        const gridIdx = getGridIndex(newPoint.x, newPoint.y);
-        if (gridIdx < 0) continue;
-
-        let valid = true;
-        const gridX = Math.floor((newPoint.x + width / 2) / cellSize);
-        const gridY = Math.floor((newPoint.y + height / 2) / cellSize);
-
-        // Check neighboring cells
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            const checkX = gridX + dx;
-            const checkY = gridY + dy;
-            if (checkX < 0 || checkX >= gridWidth || checkY < 0 || checkY >= gridHeight) continue;
-
-            const checkIdx = checkY * gridWidth + checkX;
-            const neighbor = grid[checkIdx];
-            if (neighbor) {
-              // Use squared distance to avoid sqrt
-              const dx2 = newPoint.x - neighbor.x;
-              const dy2 = newPoint.y - neighbor.y;
-              const distSq = dx2 * dx2 + dy2 * dy2;
-              if (distSq < minDistSq) {
-                valid = false;
-                break;
-              }
-            }
-          }
-          if (!valid) break;
-        }
-
-        if (valid) {
-          // Additional check: avoid creating collinear points with nearby positions
-          let isCollinear = false;
-          if (positions.length >= 2) {
-            // Cache squared distance threshold for nearby check
-            const nearbyDistSq = (minDistance * 3) ** 2;
-
-            // Check if this new point is collinear with any pair of existing nearby points
-            const nearbyPositions = positions.filter(p => {
-              const dx = newPoint.x - p.x;
-              const dy = newPoint.y - p.y;
-              return dx * dx + dy * dy < nearbyDistSq;
-            });
-
-            for (let i = 0; i < nearbyPositions.length - 1; i++) {
-              for (let j = i + 1; j < nearbyPositions.length; j++) {
-                if (this.isNearlyCollinear(nearbyPositions[i], nearbyPositions[j], newPoint)) {
-                  isCollinear = true;
-                  break;
-                }
-              }
-              if (isCollinear) break;
-            }
-          }
-
-          if (!isCollinear) {
-            positions.push(newPoint);
-            activeList.push(newPoint);
-            grid[gridIdx] = newPoint;
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        activeList.splice(randomIndex, 1);
+    // Create grid cells and assign one particle per cell with jitter
+    const cells = [];
+    for (let row = 0; row < gridRows; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        cells.push({ row, col });
       }
     }
 
-    // If we didn't get enough points, fill with random positions (fallback)
-    while (positions.length < count) {
+    // Shuffle cells using seeded random to avoid patterns
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rng() * (i + 1));
+      [cells[i], cells[j]] = [cells[j], cells[i]];
+    }
+
+    // Place particles in cells with random jitter
+    const jitterAmount = 0.7; // How much particles can move within their cell (0-1)
+    for (let i = 0; i < Math.min(count, cells.length); i++) {
+      const { row, col } = cells[i];
+
+      // Calculate cell center
+      const cellCenterX = (col + 0.5) * cellWidth - width / 2;
+      const cellCenterY = (row + 0.5) * cellHeight - height / 2;
+
+      // Add random jitter within cell
+      const jitterX = (this.rng() - 0.5) * cellWidth * jitterAmount;
+      const jitterY = (this.rng() - 0.5) * cellHeight * jitterAmount;
+
       positions.push({
-        x: (this.rng() - 0.5) * width,
-        y: (this.rng() - 0.5) * height,
+        x: cellCenterX + jitterX,
+        y: cellCenterY + jitterY,
       });
     }
 
+    // If we need more particles than grid cells, use relaxation on additional points
+    while (positions.length < count) {
+      // Add random point
+      const newPoint = {
+        x: (this.rng() - 0.5) * width * 0.95,
+        y: (this.rng() - 0.5) * height * 0.95,
+      };
+
+      // Find area with fewest nearby particles
+      let minNeighbors = Infinity;
+      let bestPoint = newPoint;
+
+      // Try several random positions and pick the one with fewest neighbors
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const testPoint = {
+          x: (this.rng() - 0.5) * width * 0.95,
+          y: (this.rng() - 0.5) * height * 0.95,
+        };
+
+        // Count nearby particles
+        let neighborCount = 0;
+        const searchRadius = Math.max(cellWidth, cellHeight) * 1.5;
+        const searchRadiusSq = searchRadius * searchRadius;
+
+        for (const pos of positions) {
+          const dx = testPoint.x - pos.x;
+          const dy = testPoint.y - pos.y;
+          if (dx * dx + dy * dy < searchRadiusSq) {
+            neighborCount++;
+          }
+        }
+
+        if (neighborCount < minNeighbors) {
+          minNeighbors = neighborCount;
+          bestPoint = testPoint;
+        }
+      }
+
+      positions.push(bestPoint);
+    }
+
+    // Apply Lloyd's relaxation to further improve uniformity
+    this.applyLloydRelaxation(positions, width, height, 3);
+
     return positions;
+  }
+
+  /**
+   * Apply Lloyd's relaxation algorithm to improve point distribution uniformity
+   * Moves each point towards the centroid of its Voronoi cell (approximated)
+   */
+  applyLloydRelaxation(positions, width, height, iterations) {
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+
+    for (let iter = 0; iter < iterations; iter++) {
+      // For each point, find its neighbors and move towards less dense areas
+      const newPositions = positions.map((pos, idx) => {
+        // Find nearby points
+        const searchRadius = Math.max(width, height) / Math.sqrt(positions.length) * 2;
+        const searchRadiusSq = searchRadius * searchRadius;
+
+        let sumX = 0;
+        let sumY = 0;
+        let count = 0;
+
+        for (let i = 0; i < positions.length; i++) {
+          if (i === idx) continue;
+          const other = positions[i];
+          const dx = other.x - pos.x;
+          const dy = other.y - pos.y;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq < searchRadiusSq && distSq > 0) {
+            // Weight by inverse distance - push away from nearby points
+            const dist = Math.sqrt(distSq);
+            const weight = 1 / dist;
+            sumX -= (dx / dist) * weight;
+            sumY -= (dy / dist) * weight;
+            count++;
+          }
+        }
+
+        if (count > 0) {
+          // Move point slightly in the direction away from neighbors
+          const moveStrength = 0.3;
+          const magnitude = Math.sqrt(sumX * sumX + sumY * sumY) || 1;
+          const newX = pos.x + (sumX / magnitude) * searchRadius * 0.1 * moveStrength;
+          const newY = pos.y + (sumY / magnitude) * searchRadius * 0.1 * moveStrength;
+
+          // Keep within bounds
+          return {
+            x: Math.max(-halfWidth * 0.95, Math.min(halfWidth * 0.95, newX)),
+            y: Math.max(-halfHeight * 0.95, Math.min(halfHeight * 0.95, newY)),
+          };
+        }
+
+        return pos;
+      });
+
+      // Update positions
+      for (let i = 0; i < positions.length; i++) {
+        positions[i] = newPositions[i];
+      }
+    }
+  }
+
+  /**
+   * Check if three points are nearly collinear (form a nearly straight line)
+   * Used for connection validation
+   */
+  isNearlyCollinear(p1, p2, p3, threshold = 0.15) {
+    const area = Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)) / 2;
+    const d12sq = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+    const d23sq = (p3.x - p2.x) ** 2 + (p3.y - p2.y) ** 2;
+    const d31sq = (p1.x - p3.x) ** 2 + (p1.y - p3.y) ** 2;
+    const perimeter = Math.sqrt(d12sq) + Math.sqrt(d23sq) + Math.sqrt(d31sq);
+    return area / perimeter < threshold;
   }
 
   /**
    * Initialize particle positions, velocities, and create connection graph
    */
   initialize() {
-    // Generate well-distributed particle positions using Poisson disk sampling
+    // Generate uniformly distributed particle positions using grid-based jittered sampling
     const positions = this.generatePoissonDiskPositions(
       this.params.particleCount,
       this.params.boundsX,
