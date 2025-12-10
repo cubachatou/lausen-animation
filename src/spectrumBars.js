@@ -275,8 +275,15 @@ export class SpectrumBars {
    */
   dispose() {
     if (this.mesh) {
-      this.mesh.geometry.dispose();
-      this.mesh.material.dispose();
+      if (this.mesh.geometry) {
+        this.mesh.geometry.dispose();
+      }
+      if (this.mesh.material) {
+        this.mesh.material.dispose();
+      }
+      this.mesh = null;
     }
+    // Clear arrays to help GC
+    this.randomOffsets = [];
   }
 }

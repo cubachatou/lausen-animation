@@ -81,8 +81,11 @@ function setupLineFolder(gui, app) {
     .name('Line Count')
     .onChange(() => {
       const oldMesh = app.wave.mesh;
-      app.wave.createMesh();
       app.scene.remove(oldMesh);
+      // Dispose old geometry and material
+      if (oldMesh.geometry) oldMesh.geometry.dispose();
+      if (oldMesh.material) oldMesh.material.dispose();
+      app.wave.createMesh();
       app.scene.add(app.wave.mesh);
     });
   lineFolder
@@ -90,8 +93,11 @@ function setupLineFolder(gui, app) {
     .name('Points Per Line')
     .onChange(() => {
       const oldMesh = app.wave.mesh;
-      app.wave.createMesh();
       app.scene.remove(oldMesh);
+      // Dispose old geometry and material
+      if (oldMesh.geometry) oldMesh.geometry.dispose();
+      if (oldMesh.material) oldMesh.material.dispose();
+      app.wave.createMesh();
       app.scene.add(app.wave.mesh);
     });
   lineFolder
@@ -154,6 +160,9 @@ function setupMeshFolder(gui, app) {
       app.spectrumBars.setParams({ totalWidth: app.params.meshWidth });
       const oldMesh = app.spectrumBars.recreateMesh();
       app.scene.remove(oldMesh);
+      // Dispose old mesh resources
+      if (oldMesh.geometry) oldMesh.geometry.dispose();
+      if (oldMesh.material) oldMesh.material.dispose();
       app.scene.add(app.spectrumBars.mesh);
     });
   meshFolder
@@ -364,6 +373,9 @@ function setupSpectrumFolder(gui, app) {
       app.spectrumBars.setParams({ barCount: value });
       const oldMesh = app.spectrumBars.recreateMesh();
       app.scene.remove(oldMesh);
+      // Dispose old mesh resources
+      if (oldMesh.geometry) oldMesh.geometry.dispose();
+      if (oldMesh.material) oldMesh.material.dispose();
       app.scene.add(app.spectrumBars.mesh);
     });
   spectrumFolder
@@ -373,6 +385,9 @@ function setupSpectrumFolder(gui, app) {
       app.spectrumBars.setParams({ barGap: value });
       const oldMesh = app.spectrumBars.recreateMesh();
       app.scene.remove(oldMesh);
+      // Dispose old mesh resources
+      if (oldMesh.geometry) oldMesh.geometry.dispose();
+      if (oldMesh.material) oldMesh.material.dispose();
       app.scene.add(app.spectrumBars.mesh);
     });
   spectrumFolder

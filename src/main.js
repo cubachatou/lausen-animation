@@ -205,8 +205,8 @@ class App {
   }
 
   setupEventListeners() {
-    // Store resize handler to allow removal later
-    this.handleResize = () => {
+    // Actual resize logic
+    this._doResize = () => {
       this.sizes.width = window.innerWidth;
       this.sizes.height = window.innerHeight;
 
@@ -229,6 +229,18 @@ class App {
       }
     };
 
+    // Debounced resize handler to avoid excessive updates during resize
+    this._resizeTimeout = null;
+    this.handleResize = () => {
+      if (this._resizeTimeout) {
+        clearTimeout(this._resizeTimeout);
+      }
+      this._resizeTimeout = setTimeout(() => {
+        this._doResize();
+        this._resizeTimeout = null;
+      }, 100);
+    };
+
     window.addEventListener('resize', this.handleResize);
   }
 
@@ -237,23 +249,23 @@ class App {
 
     const elapsedTime = this.clock.getElapsedTime();
 
-    // Update shader time uniform
-    if (this.wave.material) {
+    // Update shader time uniform - only if wave is visible
+    if (this.params.waveVisible && this.wave.material) {
       this.wave.material.uniforms.uTime.value = elapsedTime;
     }
 
-    // Update particle network
-    if (this.particleNetwork) {
+    // Update particle network - only if visible
+    if (this.params.particleNetworkVisible && this.particleNetwork) {
       this.particleNetwork.update(elapsedTime);
     }
 
-    // Update spectrum bars
-    if (this.spectrumBars && this.params.spectrumBarsVisible) {
+    // Update spectrum bars - only if visible
+    if (this.params.spectrumBarsVisible && this.spectrumBars) {
       this.spectrumBars.update();
     }
 
-    // Update floating numbers
-    if (this.floatingNumbers && this.params.floatingNumbersVisible) {
+    // Update floating numbers - only if visible
+    if (this.params.floatingNumbersVisible && this.floatingNumbers) {
       this.floatingNumbers.update(elapsedTime);
     }
 
@@ -272,6 +284,13 @@ class App {
     // Cancel animation loop
     if (this.animationFrameId) {
       window.cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    // Clear resize timeout
+    if (this._resizeTimeout) {
+      clearTimeout(this._resizeTimeout);
+      this._resizeTimeout = null;
     }
 
     // Remove event listeners

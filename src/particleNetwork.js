@@ -33,6 +33,12 @@ export class ParticleNetwork {
     this.connections = [];
     this.group = new THREE.Group();
 
+    // Reusable Color objects to avoid allocations in hot paths
+    this._tempColor = new THREE.Color();
+    this._tempColor2 = new THREE.Color();
+    // Reusable array for line positions (will be sized during createLineMeshes)
+    this._linePositions = null;
+
     // Initialize seeded random number generator
     this.rng = this.createSeededRandom(this.params.seed);
 
@@ -372,32 +378,8 @@ export class ParticleNetwork {
 
       // If all particles are satisfied, break early
       if (allSatisfied) {
-        console.log(`All particles have minimum ${minConnections} connections after ${iteration} iteration(s)`);
         break;
       }
-    }
-
-    // Final verification and detailed logging
-    let minConnectionsFound = Infinity;
-    let maxConnectionsFound = 0;
-    let particlesWithIssues = [];
-
-    for (let i = 0; i < this.params.particleCount; i++) {
-      const count = this.particles[i].connections.length;
-      minConnectionsFound = Math.min(minConnectionsFound, count);
-      maxConnectionsFound = Math.max(maxConnectionsFound, count);
-
-      if (count < minConnections) {
-        particlesWithIssues.push(i);
-        console.error(`❌ Particle ${i} only has ${count} connection(s):`, this.particles[i].connections);
-      }
-    }
-
-    console.log(`Network stats: ${this.params.particleCount} particles, ${this.connections.length} connections`);
-    console.log(`Connections per particle: min=${minConnectionsFound}, max=${maxConnectionsFound}`);
-
-    if (particlesWithIssues.length > 0) {
-      console.error(`⚠️ ${particlesWithIssues.length} particles have fewer than ${minConnections} connections!`);
     }
   }
 
@@ -414,8 +396,12 @@ export class ParticleNetwork {
 
   /**
    * Get color based on X position using gradient interpolation
+   * @param {number} x - X position
+   * @param {THREE.Color} [targetColor] - Optional target color to avoid allocation
+   * @returns {THREE.Color} The interpolated color
    */
-  getColorForPosition(x) {
+  getColorForPosition(x, targetColor) {
+    const result = targetColor || this._tempColor;
     const minX = -this.params.boundsX / 2;
     const maxX = this.params.boundsX / 2;
     const normalizedX = (x - minX) / (maxX - minX);
@@ -424,20 +410,20 @@ export class ParticleNetwork {
 
     // Handle single color case
     if (activeColorCount <= 1) {
-      return this.params.colors[0].clone();
+      return result.copy(this.params.colors[0]);
     }
 
     const segmentSize = 1.0 / (activeColorCount - 1);
     const segmentIndex = Math.floor(normalizedX / segmentSize);
     const segmentT = (normalizedX - segmentIndex * segmentSize) / segmentSize;
 
-    const colorIndex1 = Math.min(segmentIndex, activeColorCount - 1);
+    const colorIndex1 = Math.max(0, Math.min(segmentIndex, activeColorCount - 1));
     const colorIndex2 = Math.min(colorIndex1 + 1, activeColorCount - 1);
 
     const color1 = this.params.colors[colorIndex1];
     const color2 = this.params.colors[colorIndex2];
 
-    return new THREE.Color().lerpColors(color1, color2, segmentT);
+    return result.lerpColors(color1, color2, segmentT);
   }
 
   /**
@@ -471,10 +457,10 @@ export class ParticleNetwork {
     const maxZ = this.params.zPosition + this.params.boundsZ / 2;
 
     for (let i = 0; i < this.params.particleCount; i++) {
-      const color = this.getColorForPosition(this.particles[i].position.x);
-      colors[i * 3 + 0] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
+      this.getColorForPosition(this.particles[i].position.x, this._tempColor);
+      colors[i * 3 + 0] = this._tempColor.r;
+      colors[i * 3 + 1] = this._tempColor.g;
+      colors[i * 3 + 2] = this._tempColor.b;
 
       // Calculate scale: particles closer to camera (higher Z) are larger
       const normalizedZ = (this.particles[i].position.z - minZ) / (maxZ - minZ || 1);
@@ -499,25 +485,39 @@ export class ParticleNetwork {
    * Create line meshes for connections using LineSegments2 for proper width control
    */
   createLineMeshes() {
-    const positions = [];
-    const colors = [];
+    // Pre-allocate arrays for better performance
+    const connectionCount = this.connections.length;
+    const positions = new Float32Array(connectionCount * 6);
+    const colors = new Float32Array(connectionCount * 6);
 
-    for (let i = 0; i < this.connections.length; i++) {
+    for (let i = 0; i < connectionCount; i++) {
       const [idA, idB] = this.connections[i];
       const posA = this.particles[idA].position;
       const posB = this.particles[idB].position;
 
+      const posIdx = i * 6;
       // Set positions
-      positions.push(posA.x, posA.y, posA.z);
-      positions.push(posB.x, posB.y, posB.z);
+      positions[posIdx] = posA.x;
+      positions[posIdx + 1] = posA.y;
+      positions[posIdx + 2] = posA.z;
+      positions[posIdx + 3] = posB.x;
+      positions[posIdx + 4] = posB.y;
+      positions[posIdx + 5] = posB.z;
 
-      // Set colors based on X position
-      const colorA = this.getColorForPosition(posA.x);
-      const colorB = this.getColorForPosition(posB.x);
+      // Set colors based on X position - reuse temp colors
+      this.getColorForPosition(posA.x, this._tempColor);
+      this.getColorForPosition(posB.x, this._tempColor2);
 
-      colors.push(colorA.r, colorA.g, colorA.b);
-      colors.push(colorB.r, colorB.g, colorB.b);
+      colors[posIdx] = this._tempColor.r;
+      colors[posIdx + 1] = this._tempColor.g;
+      colors[posIdx + 2] = this._tempColor.b;
+      colors[posIdx + 3] = this._tempColor2.r;
+      colors[posIdx + 4] = this._tempColor2.g;
+      colors[posIdx + 5] = this._tempColor2.b;
     }
+
+    // Store line positions array for reuse in update loop
+    this._linePositions = new Float32Array(connectionCount * 6);
 
     const geometry = new LineSegmentsGeometry();
     geometry.setPositions(positions);
@@ -596,10 +596,8 @@ export class ParticleNetwork {
     this.particleMesh.instanceMatrix.needsUpdate = true;
     this.particleMesh.geometry.attributes.instanceScale.needsUpdate = true;
 
-    // Update line positions - reuse array from geometry if possible
-    const linePositions =
-      this.lineMesh.geometry.getAttribute('instanceStart')?.array || new Float32Array(this.connections.length * 6);
-    let idx = 0;
+    // Update line positions - reuse pre-allocated array
+    const linePositions = this._linePositions;
     const connectionCount = this.connections.length;
     const particles = this.particles;
 
@@ -608,12 +606,13 @@ export class ParticleNetwork {
       const posA = particles[idA].position;
       const posB = particles[idB].position;
 
-      linePositions[idx++] = posA.x;
-      linePositions[idx++] = posA.y;
-      linePositions[idx++] = posA.z;
-      linePositions[idx++] = posB.x;
-      linePositions[idx++] = posB.y;
-      linePositions[idx++] = posB.z;
+      const idx = i * 6;
+      linePositions[idx] = posA.x;
+      linePositions[idx + 1] = posA.y;
+      linePositions[idx + 2] = posA.z;
+      linePositions[idx + 3] = posB.x;
+      linePositions[idx + 4] = posB.y;
+      linePositions[idx + 5] = posB.z;
     }
     this.lineMesh.geometry.setPositions(linePositions);
   }
@@ -624,28 +623,38 @@ export class ParticleNetwork {
   updateColors() {
     if (!this.particleMesh || !this.lineMesh) return;
 
-    // Update particle colors
+    // Update particle colors - reuse temp color to avoid allocations
     const particleColors = this.particleMesh.geometry.attributes.instanceColor.array;
     for (let i = 0; i < this.params.particleCount; i++) {
-      const color = this.getColorForPosition(this.particles[i].position.x);
-      particleColors[i * 3 + 0] = color.r;
-      particleColors[i * 3 + 1] = color.g;
-      particleColors[i * 3 + 2] = color.b;
+      this.getColorForPosition(this.particles[i].position.x, this._tempColor);
+      particleColors[i * 3 + 0] = this._tempColor.r;
+      particleColors[i * 3 + 1] = this._tempColor.g;
+      particleColors[i * 3 + 2] = this._tempColor.b;
     }
     this.particleMesh.geometry.attributes.instanceColor.needsUpdate = true;
 
-    // Update line colors
-    const lineColors = [];
-    for (let i = 0; i < this.connections.length; i++) {
+    // Update line colors - reuse/grow array to avoid allocations
+    const connectionCount = this.connections.length;
+    if (!this._lineColors || this._lineColors.length !== connectionCount * 6) {
+      this._lineColors = new Float32Array(connectionCount * 6);
+    }
+    const lineColors = this._lineColors;
+    
+    for (let i = 0; i < connectionCount; i++) {
       const [idA, idB] = this.connections[i];
       const posA = this.particles[idA].position;
       const posB = this.particles[idB].position;
 
-      const colorA = this.getColorForPosition(posA.x);
-      const colorB = this.getColorForPosition(posB.x);
+      this.getColorForPosition(posA.x, this._tempColor);
+      this.getColorForPosition(posB.x, this._tempColor2);
 
-      lineColors.push(colorA.r, colorA.g, colorA.b);
-      lineColors.push(colorB.r, colorB.g, colorB.b);
+      const idx = i * 6;
+      lineColors[idx] = this._tempColor.r;
+      lineColors[idx + 1] = this._tempColor.g;
+      lineColors[idx + 2] = this._tempColor.b;
+      lineColors[idx + 3] = this._tempColor2.r;
+      lineColors[idx + 4] = this._tempColor2.g;
+      lineColors[idx + 5] = this._tempColor2.b;
     }
     this.lineMesh.geometry.setColors(lineColors);
   }

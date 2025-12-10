@@ -35,6 +35,9 @@ export class FloatingNumbers {
     // Digit atlas - stores pre-rendered textures for each digit and color
     this.digitAtlas = new Map();
 
+    // Material pool for sprite reuse - keyed by colorIndex
+    this._materialPool = new Map();
+
     // Initialize seeded random number generator
     this.rng = this.createSeededRandom(this.params.seed);
 
@@ -54,9 +57,8 @@ export class FloatingNumbers {
     try {
       const loadedFont = await font.load();
       document.fonts.add(loadedFont);
-      console.log('Overtime LCD font loaded successfully');
     } catch (error) {
-      console.warn('Failed to load Overtime LCD font, using fallback:', error);
+      // Font loading failed, fallback to system font
     }
   }
 
@@ -272,6 +274,30 @@ export class FloatingNumbers {
   }
 
   /**
+   * Get or create a shared material for a digit sprite
+   * Materials are cached by character+colorIndex for reuse
+   */
+  getSpriteMaterial(char, colorIndex) {
+    const key = char + '_' + colorIndex;
+    
+    if (!this._materialPool.has(key)) {
+      const digitData = this.digitAtlas.get(key);
+      if (!digitData) return null;
+      
+      const material = new THREE.SpriteMaterial({
+        map: digitData.texture,
+        transparent: true,
+        opacity: this.params.opacity,
+        depthWrite: false,
+        depthTest: true,
+      });
+      this._materialPool.set(key, material);
+    }
+    
+    return this._materialPool.get(key);
+  }
+
+  /**
    * Create sprites for each digit in a value string
    */
   createDigitSprites(value, colorIndex) {
@@ -302,13 +328,9 @@ export class FloatingNumbers {
       const digitData = this.digitAtlas.get(key);
 
       if (digitData) {
-        const material = new THREE.SpriteMaterial({
-          map: digitData.texture,
-          transparent: true,
-          opacity: this.params.opacity,
-          depthWrite: false,
-          depthTest: true,
-        });
+        // Get or create shared material
+        const material = this.getSpriteMaterial(char, colorIndex);
+        if (!material) continue;
 
         const sprite = new THREE.Sprite(material);
         const charWidth = (digitData.width / this.params.fontSize) * scale;
@@ -336,18 +358,18 @@ export class FloatingNumbers {
     if (newValue.length === oldValue.length) {
       for (let i = 0; i < newValue.length; i++) {
         if (newValue[i] !== oldValue[i]) {
-          const key = newValue[i] + '_' + numberData.colorIndex;
-          const digitData = this.digitAtlas.get(key);
-          if (digitData && numberData.digitSprites[i]) {
-            numberData.digitSprites[i].material.map = digitData.texture;
+          // Get shared material for new character
+          const material = this.getSpriteMaterial(newValue[i], numberData.colorIndex);
+          if (material && numberData.digitSprites[i]) {
+            numberData.digitSprites[i].material = material;
           }
         }
       }
     } else {
       // Different length - rebuild sprites (less common)
+      // Don't dispose materials as they're shared
       for (const sprite of numberData.digitSprites) {
         numberData.group.remove(sprite);
-        sprite.material.dispose();
       }
 
       const newSprites = this.createDigitSprites(newValue, numberData.colorIndex);
@@ -392,12 +414,12 @@ export class FloatingNumbers {
     const newColorIndex = this.getColorIndexForPosition(finalX);
     if (newColorIndex !== numberData.colorIndex) {
       numberData.colorIndex = newColorIndex;
+      // Update to use shared materials for new color
       for (let i = 0; i < numberData.value.length; i++) {
         const char = numberData.value[i];
-        const key = char + '_' + newColorIndex;
-        const digitData = this.digitAtlas.get(key);
-        if (digitData && numberData.digitSprites[i]) {
-          numberData.digitSprites[i].material.map = digitData.texture;
+        const material = this.getSpriteMaterial(char, newColorIndex);
+        if (material && numberData.digitSprites[i]) {
+          numberData.digitSprites[i].material = material;
         }
       }
     }
@@ -435,12 +457,19 @@ export class FloatingNumbers {
   }
 
   /**
-   * Update colors - rebuild the digit atlas
+   * Update colors - rebuild the digit atlas and material pool
    */
   updateColors(colors, colorStops) {
     this.params.colors = colors;
     this.params.colorStops = colorStops;
 
+    // Dispose old materials from pool
+    for (const material of this._materialPool.values()) {
+      material.dispose();
+    }
+    this._materialPool.clear();
+
+    // Dispose old textures
     for (const [key, data] of this.digitAtlas) {
       data.texture.dispose();
     }
@@ -448,14 +477,14 @@ export class FloatingNumbers {
 
     this.buildDigitAtlas();
 
+    // Update all existing sprites with new materials
     for (const numberData of this.numbers) {
       numberData.colorIndex = this.getColorIndexForPosition(numberData.x);
       for (let i = 0; i < numberData.value.length; i++) {
         const char = numberData.value[i];
-        const key = char + '_' + numberData.colorIndex;
-        const digitData = this.digitAtlas.get(key);
-        if (digitData && numberData.digitSprites[i]) {
-          numberData.digitSprites[i].material.map = digitData.texture;
+        const material = this.getSpriteMaterial(char, numberData.colorIndex);
+        if (material && numberData.digitSprites[i]) {
+          numberData.digitSprites[i].material = material;
         }
       }
     }
@@ -472,9 +501,10 @@ export class FloatingNumbers {
    * Recreate with new settings
    */
   recreate() {
+    // Remove sprites from groups (don't dispose materials as they're shared)
     for (const numberData of this.numbers) {
       for (const sprite of numberData.digitSprites) {
-        sprite.material.dispose();
+        numberData.group.remove(sprite);
       }
       this.group.remove(numberData.group);
     }
@@ -482,6 +512,13 @@ export class FloatingNumbers {
 
     this.rng = this.createSeededRandom(this.params.seed);
 
+    // Dispose old materials from pool
+    for (const material of this._materialPool.values()) {
+      material.dispose();
+    }
+    this._materialPool.clear();
+
+    // Dispose old textures
     for (const [key, data] of this.digitAtlas) {
       data.texture.dispose();
     }
@@ -504,14 +541,22 @@ export class FloatingNumbers {
    * Dispose of all resources
    */
   dispose() {
+    // Remove sprites from groups (don't dispose individual materials as they're shared)
     for (const numberData of this.numbers) {
       for (const sprite of numberData.digitSprites) {
-        sprite.material.dispose();
+        numberData.group.remove(sprite);
       }
       this.group.remove(numberData.group);
     }
     this.numbers = [];
 
+    // Dispose shared materials from pool
+    for (const material of this._materialPool.values()) {
+      material.dispose();
+    }
+    this._materialPool.clear();
+
+    // Dispose textures
     for (const [key, data] of this.digitAtlas) {
       data.texture.dispose();
     }
