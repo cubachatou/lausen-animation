@@ -105,7 +105,7 @@ export class FloatingNumbers {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
 
-    // Use 2x resolution for sharper text (retina-like)
+    // Use 1.5x resolution for sharper text (retina-like)
     const scale = 1.5;
     const fontSize = this.params.fontSize * scale;
     const padding = 2 * scale; // Minimal padding
